@@ -410,6 +410,52 @@ export function Templates() {
                 + Add Group
               </button>
             )}
+
+            {/* Template totals */}
+            {currentTemplate.groups && currentTemplate.groups.length > 0 && (
+              <div className="border-t-2 border-gray-300 pt-4 mt-6">
+                {(() => {
+                  const totalBudgeted = currentTemplate.groups.reduce(
+                    (total, group) =>
+                      total +
+                      group.lineItems.reduce(
+                        (groupTotal, item) => groupTotal + parseFloat(item.budgetedAmount),
+                        0
+                      ),
+                    0
+                  );
+                  const baseIncome = parseFloat(currentTemplate.baseIncome);
+                  const remaining = baseIncome - totalBudgeted;
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-900">Total Budgeted</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          ${totalBudgeted.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-900">Base Income</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          ${baseIncome.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                        <span className="text-sm font-semibold text-gray-900">Remaining</span>
+                        <span
+                          className={`text-sm font-semibold ${
+                            remaining >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}
+                        >
+                          ${remaining.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -461,6 +507,18 @@ function GroupEditor({
         {group.lineItems.map((item) => (
           <LineItemRow key={item.id} item={item} onDelete={() => onDeleteItem(item.id)} />
         ))}
+
+        {/* Group total */}
+        {group.lineItems.length > 0 && (
+          <div className="flex items-center justify-between py-2 border-t border-gray-200 mt-2 pt-3">
+            <span className="text-sm font-medium text-gray-900">Group Total</span>
+            <span className="text-sm font-medium text-gray-900">
+              ${group.lineItems
+                .reduce((sum, item) => sum + parseFloat(item.budgetedAmount), 0)
+                .toLocaleString()}
+            </span>
+          </div>
+        )}
 
         {/* Add line item form */}
         {isAddingItem ? (
