@@ -44,6 +44,17 @@ export async function addGroup(
   });
 }
 
+export async function updateGroup(
+  templateId: string,
+  groupId: string,
+  data: Partial<CreateGroupRequest>
+): Promise<Group> {
+  return apiClient<Group>(`/templates/${templateId}/groups/${groupId}`, {
+    method: 'PUT',
+    body: data,
+  });
+}
+
 export async function deleteGroup(
   templateId: string,
   groupId: string
@@ -62,6 +73,21 @@ export async function addLineItem(
     `/templates/${templateId}/groups/${groupId}/items`,
     {
       method: 'POST',
+      body: data,
+    }
+  );
+}
+
+export async function updateLineItem(
+  templateId: string,
+  groupId: string,
+  itemId: string,
+  data: Partial<CreateLineItemRequest>
+): Promise<LineItem> {
+  return apiClient<LineItem>(
+    `/templates/${templateId}/groups/${groupId}/items/${itemId}`,
+    {
+      method: 'PUT',
       body: data,
     }
   );

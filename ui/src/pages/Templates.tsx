@@ -6,8 +6,10 @@ import {
   createTemplate,
   deleteTemplate,
   addGroup,
+  updateGroup,
   deleteGroup,
   addLineItem,
+  updateLineItem,
   deleteLineItem,
 } from '../api/templates';
 import type {
@@ -176,6 +178,32 @@ export function Templates() {
       await loadTemplate(currentTemplate.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete line item');
+    }
+  }
+
+  async function handleUpdateGroup(groupId: string, name: string) {
+    if (!currentTemplate) return;
+
+    try {
+      await updateGroup(currentTemplate.id, groupId, { name });
+      await loadTemplate(currentTemplate.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update group');
+    }
+  }
+
+  async function handleUpdateLineItem(
+    groupId: string,
+    itemId: string,
+    data: { name?: string; budgetedAmount?: number; isRollover?: boolean }
+  ) {
+    if (!currentTemplate) return;
+
+    try {
+      await updateLineItem(currentTemplate.id, groupId, itemId, data);
+      await loadTemplate(currentTemplate.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update line item');
     }
   }
 
@@ -359,8 +387,10 @@ export function Templates() {
                 key={group.id}
                 group={group}
                 onDeleteGroup={() => handleDeleteGroup(group.id)}
+                onUpdateGroup={(name) => handleUpdateGroup(group.id, name)}
                 onAddItem={(e) => handleAddLineItem(e, group.id)}
                 onDeleteItem={(itemId) => handleDeleteLineItem(group.id, itemId)}
+                onUpdateItem={(itemId, data) => handleUpdateLineItem(group.id, itemId, data)}
                 isAddingItem={addingItemToGroup === group.id}
                 setIsAddingItem={(val) => setAddingItemToGroup(val ? group.id : null)}
                 newItemName={newItemName}
@@ -466,8 +496,10 @@ export function Templates() {
 interface GroupEditorProps {
   group: Group;
   onDeleteGroup: () => void;
+  onUpdateGroup: (name: string) => void;
   onAddItem: (e: React.FormEvent) => void;
   onDeleteItem: (itemId: string) => void;
+  onUpdateItem: (itemId: string, data: { name?: string; budgetedAmount?: number; isRollover?: boolean }) => void;
   isAddingItem: boolean;
   setIsAddingItem: (val: boolean) => void;
   newItemName: string;
@@ -481,8 +513,10 @@ interface GroupEditorProps {
 function GroupEditor({
   group,
   onDeleteGroup,
+  onUpdateGroup,
   onAddItem,
   onDeleteItem,
+  onUpdateItem,
   isAddingItem,
   setIsAddingItem,
   newItemName,
@@ -492,10 +526,47 @@ function GroupEditor({
   newItemIsRollover,
   setNewItemIsRollover,
 }: GroupEditorProps) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(group.name);
+
+  const handleSaveName = () => {
+    if (editName.trim() && editName !== group.name) {
+      onUpdateGroup(editName.trim());
+    }
+    setIsEditingName(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSaveName();
+    } else if (e.key === 'Escape') {
+      setEditName(group.name);
+      setIsEditingName(false);
+    }
+  };
+
   return (
     <div className="border border-gray-200 rounded-lg">
       <div className="bg-gray-50 px-4 py-3 flex items-center justify-between rounded-t-lg">
-        <h3 className="text-sm font-medium text-gray-900">{group.name}</h3>
+        {isEditingName ? (
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleSaveName}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            className="text-sm font-medium text-gray-900 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+          />
+        ) : (
+          <h3
+            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-indigo-600"
+            onClick={() => setIsEditingName(true)}
+            title="Click to edit"
+          >
+            {group.name}
+          </h3>
+        )}
         <button
           onClick={onDeleteGroup}
           className="text-sm text-red-600 hover:text-red-800"
@@ -505,7 +576,12 @@ function GroupEditor({
       </div>
       <div className="p-4 space-y-3">
         {group.lineItems.map((item) => (
-          <LineItemRow key={item.id} item={item} onDelete={() => onDeleteItem(item.id)} />
+          <LineItemRow
+            key={item.id}
+            item={item}
+            onDelete={() => onDeleteItem(item.id)}
+            onUpdate={(data) => onUpdateItem(item.id, data)}
+          />
         ))}
 
         {/* Group total */}
@@ -594,13 +670,113 @@ function GroupEditor({
 interface LineItemRowProps {
   item: LineItem;
   onDelete: () => void;
+  onUpdate: (data: { name?: string; budgetedAmount?: number; isRollover?: boolean }) => void;
 }
 
-function LineItemRow({ item, onDelete }: LineItemRowProps) {
+function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(item.name);
+  const [editAmount, setEditAmount] = useState(item.budgetedAmount);
+  const [editIsRollover, setEditIsRollover] = useState(item.isRollover);
+
+  const handleSave = () => {
+    const updates: { name?: string; budgetedAmount?: number; isRollover?: boolean } = {};
+
+    if (editName.trim() !== item.name) {
+      updates.name = editName.trim();
+    }
+    if (parseFloat(editAmount) !== parseFloat(item.budgetedAmount)) {
+      updates.budgetedAmount = parseFloat(editAmount);
+    }
+    if (editIsRollover !== item.isRollover) {
+      updates.isRollover = editIsRollover;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onUpdate(updates);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditName(item.name);
+    setEditAmount(item.budgetedAmount);
+    setEditIsRollover(item.isRollover);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <div className="py-2 border-b border-gray-100 last:border-b-0 space-y-2">
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          />
+          <input
+            type="number"
+            value={editAmount}
+            onChange={(e) => setEditAmount(e.target.value)}
+            onKeyDown={handleKeyDown}
+            min="0"
+            step="0.01"
+            className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id={`edit-rollover-${item.id}`}
+              checked={editIsRollover}
+              onChange={(e) => setEditIsRollover(e.target.checked)}
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label htmlFor={`edit-rollover-${item.id}`} className="ml-2 block text-sm text-gray-900">
+              Rollover
+            </label>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={handleSave}
+              className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleCancel}
+              className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
       <div className="flex-1">
-        <span className="text-sm text-gray-900">{item.name}</span>
+        <span
+          className="text-sm text-gray-900 cursor-pointer hover:text-indigo-600"
+          onClick={() => setIsEditing(true)}
+          title="Click to edit"
+        >
+          {item.name}
+        </span>
         {item.isRollover && (
           <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
             Rollover
@@ -608,7 +784,11 @@ function LineItemRow({ item, onDelete }: LineItemRowProps) {
         )}
       </div>
       <div className="flex items-center space-x-4">
-        <span className="text-sm text-gray-600">
+        <span
+          className="text-sm text-gray-600 cursor-pointer hover:text-indigo-600"
+          onClick={() => setIsEditing(true)}
+          title="Click to edit"
+        >
           ${parseFloat(item.budgetedAmount).toLocaleString()}
         </span>
         <button

@@ -415,6 +415,118 @@ export async function templatesRoutes(fastify) {
     }
   });
 
+  // Update line item in group
+  fastify.put('/:templateId/groups/:groupId/items/:itemId', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['templateId', 'groupId', 'itemId'],
+        properties: {
+          templateId: { type: 'string', format: 'uuid' },
+          groupId: { type: 'string', format: 'uuid' },
+          itemId: { type: 'string', format: 'uuid' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          description: { type: 'string' },
+          budgetedAmount: { type: 'number', minimum: 0 },
+          isRollover: { type: 'boolean' },
+          sortOrder: { type: 'integer', minimum: 0 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { templateId, groupId, itemId } = request.params;
+    const { name, description, budgetedAmount, isRollover, sortOrder } = request.body;
+    const userId = request.user.userId;
+
+    try {
+      // Verify ownership of the item
+      const itemCheck = await fastify.pg.query(
+        `SELECT tli.id
+         FROM template_line_items tli
+         JOIN template_groups tg ON tli.group_id = tg.id
+         JOIN budget_templates bt ON tg.template_id = bt.id
+         WHERE tli.id = $1 AND tli.group_id = $2 AND tg.template_id = $3 AND bt.user_id = $4`,
+        [itemId, groupId, templateId, userId]
+      );
+
+      if (itemCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Line item not found'
+        });
+      }
+
+      // Build dynamic update query based on provided fields
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramIndex++}`);
+        values.push(name);
+      }
+      if (description !== undefined) {
+        updates.push(`description = $${paramIndex++}`);
+        values.push(description);
+      }
+      if (budgetedAmount !== undefined) {
+        updates.push(`budgeted_amount = $${paramIndex++}`);
+        values.push(budgetedAmount);
+      }
+      if (isRollover !== undefined) {
+        updates.push(`is_rollover = $${paramIndex++}`);
+        values.push(isRollover);
+      }
+      if (sortOrder !== undefined) {
+        updates.push(`sort_order = $${paramIndex++}`);
+        values.push(sortOrder);
+      }
+
+      if (updates.length === 0) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'No fields to update'
+        });
+      }
+
+      updates.push(`updated_at = NOW()`);
+      values.push(itemId);
+
+      const result = await fastify.pg.query(
+        `UPDATE template_line_items
+         SET ${updates.join(', ')}
+         WHERE id = $${paramIndex}
+         RETURNING id, name, description, budgeted_amount, is_rollover, sort_order, created_at, updated_at`,
+        values
+      );
+
+      const item = result.rows[0];
+
+      return reply.send({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        budgetedAmount: item.budgeted_amount,
+        isRollover: item.is_rollover,
+        sortOrder: item.sort_order,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at
+      });
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to update line item'
+      });
+    }
+  });
+
   // Remove line item from group
   fastify.delete('/:templateId/groups/:groupId/items/:itemId', {
     preHandler: [authenticate],

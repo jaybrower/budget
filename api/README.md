@@ -44,6 +44,7 @@ api/
 | POST | `/api/templates` | Create new template | Yes |
 | POST | `/api/templates/:templateId/groups` | Add group to template | Yes |
 | POST | `/api/templates/:templateId/groups/:groupId/items` | Add line item to group | Yes |
+| PUT | `/api/templates/:templateId/groups/:groupId/items/:itemId` | Update line item | Yes |
 | DELETE | `/api/templates/:templateId/groups/:groupId/items/:itemId` | Remove line item | Yes |
 | DELETE | `/api/templates/:templateId/groups/:groupId` | Remove group | Yes |
 | DELETE | `/api/templates/:templateId` | Delete template | Yes |
@@ -274,6 +275,35 @@ Response:
   "updatedAt": "2024-01-01T00:00:00.000Z"
 }
 ```
+
+### Update a Line Item
+
+```bash
+curl -X PUT http://localhost:3000/api/templates/<template-id>/groups/<group-id>/items/<item-id> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "name": "Mortgage",
+    "budgetedAmount": 1800,
+    "isRollover": true
+  }'
+```
+
+Response:
+```json
+{
+  "id": "uuid",
+  "name": "Mortgage",
+  "description": null,
+  "budgetedAmount": "1800",
+  "isRollover": true,
+  "sortOrder": 0,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+Note: All fields are optional in the request body. Only the fields provided will be updated.
 
 ### Get Template with All Groups and Items
 
