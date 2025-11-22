@@ -8,7 +8,8 @@
       "Bash(mkdir:*)",
       "Bash(tree:*)",
       "Bash(dir /s /b \"c:\\code\\budget\\api\\src\")",
-      "Bash(dir /s /b \"c:\\code\\budget\\ui\\src\")"
+      "Bash(dir /s /b \"c:\\code\\budget\\ui\\src\")",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

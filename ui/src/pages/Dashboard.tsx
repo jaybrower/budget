@@ -34,7 +34,7 @@ export function Dashboard() {
       const sheetData = await getSheetByDate(selectedYear, selectedMonth);
       setSheet(sheetData);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('not found')) {
+      if (err instanceof Error && err.message.includes('No budget sheet found')) {
         setNotFound(true);
         // Load templates for creation option (only for current month)
         if (isCurrentMonth) {

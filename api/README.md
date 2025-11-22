@@ -63,6 +63,7 @@ api/
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
+| POST | `/api/purchases` | Create a new purchase | Yes |
 | GET | `/api/purchases/unassociated` | Get all unassociated purchases | Yes |
 | GET | `/api/purchases/line-item/:lineItemId` | Get purchases for a line item | Yes |
 | PATCH | `/api/purchases/:purchaseId/link` | Link purchase to line item | Yes |
@@ -481,6 +482,41 @@ Response:
     "updatedAt": "2024-01-01T00:00:00.000Z"
   }
 ]
+```
+
+### Create a Purchase
+
+```bash
+curl -X POST http://localhost:3000/api/purchases \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "amount": 50.00,
+    "description": "Grocery shopping",
+    "paymentMethod": "credit_card",
+    "merchant": "Whole Foods",
+    "referenceNumber": "TXN123456",
+    "purchaseDate": "2025-11-15",
+    "lineItemId": "<line-item-id>"
+  }'
+```
+
+Creates a new purchase. Required fields are `amount` and `purchaseDate`. The `lineItemId` is optional - if provided, the purchase will be associated with that line item and the line item's `actual_amount` will be automatically updated. If omitted, the purchase is created as unassociated.
+
+Response:
+```json
+{
+  "id": "uuid",
+  "lineItemId": "uuid",
+  "amount": "50.00",
+  "description": "Grocery shopping",
+  "paymentMethod": "credit_card",
+  "merchant": "Whole Foods",
+  "referenceNumber": "TXN123456",
+  "purchaseDate": "2025-11-15",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
 ```
 
 ### Get Unassociated Purchases
