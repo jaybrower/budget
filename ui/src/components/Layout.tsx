@@ -43,6 +43,18 @@ export function Layout({ children }: LayoutProps) {
                   Templates
                 </NavLink>
                 <NavLink
+                  to="/purchases"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    }`
+                  }
+                >
+                  Purchases
+                </NavLink>
+                <NavLink
                   to="/account"
                   className={({ isActive }) =>
                     `px-3 py-2 rounded-md text-sm font-medium ${
