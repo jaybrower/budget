@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
+import type { PlaidLinkOnSuccessMetadata } from 'react-plaid-link';
 import { Layout } from '../components/Layout';
 import {
   createLinkToken,
@@ -9,17 +10,57 @@ import {
   syncTransactions,
   unlinkItem,
 } from '../api/plaid';
-import type { PlaidItem, PlaidLinkMetadata, SyncResult } from '../types/plaid';
+import type { PlaidItem, SyncResult } from '../types/plaid';
+
+// Separate component for Plaid Link button to prevent multiple script initializations
+function PlaidLinkButton({ onSuccess }: { onSuccess: () => void }) {
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    createLinkToken()
+      .then((data) => setLinkToken(data.linkToken))
+      .catch((err) => console.error('Failed to create link token:', err));
+  }, []);
+
+  const handleSuccess = async (publicToken: string, metadata: PlaidLinkOnSuccessMetadata) => {
+    try {
+      await exchangePublicToken(publicToken, {
+        institution: metadata.institution ? {
+          institution_id: metadata.institution.institution_id,
+          name: metadata.institution.name,
+        } : undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      console.error('Failed to exchange token:', err);
+    }
+  };
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken,
+    onSuccess: handleSuccess,
+  });
+
+  return (
+    <button
+      onClick={() => open()}
+      disabled={!ready}
+      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+    >
+      Link Bank Account
+    </button>
+  );
+}
 
 export function LinkedAccounts() {
   const [items, setItems] = useState<PlaidItem[]>([]);
-  const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [paymentMethodValue, setPaymentMethodValue] = useState('');
+  const [plaidKey, setPlaidKey] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -30,13 +71,8 @@ export function LinkedAccounts() {
       setIsLoading(true);
       setError(null);
 
-      const [itemsData, tokenData] = await Promise.all([
-        getPlaidItems(),
-        createLinkToken(),
-      ]);
-
+      const itemsData = await getPlaidItems();
       setItems(itemsData);
-      setLinkToken(tokenData.linkToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -44,23 +80,11 @@ export function LinkedAccounts() {
     }
   }
 
-  const onSuccess = useCallback(
-    async (publicToken: string, metadata: PlaidLinkMetadata) => {
-      try {
-        setError(null);
-        await exchangePublicToken(publicToken, metadata);
-        await loadData();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to link account');
-      }
-    },
-    []
-  );
-
-  const { open, ready } = usePlaidLink({
-    token: linkToken,
-    onSuccess,
-  });
+  function handleLinkSuccess() {
+    loadData();
+    // Remount PlaidLinkButton to get a fresh token
+    setPlaidKey((prev) => prev + 1);
+  }
 
   async function handleSync() {
     try {
@@ -170,13 +194,7 @@ export function LinkedAccounts() {
             >
               {isSyncing ? 'Syncing...' : 'Sync Transactions'}
             </button>
-            <button
-              onClick={() => open()}
-              disabled={!ready}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              Link Bank Account
-            </button>
+            <PlaidLinkButton key={plaidKey} onSuccess={handleLinkSuccess} />
           </div>
         </div>
       </div>
