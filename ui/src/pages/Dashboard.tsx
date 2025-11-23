@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { getSheetByDate, createSheet, getSyncStatus, syncSheet, updateSheet } from '../api/sheets';
 import { getTemplates } from '../api/templates';
+import { getPurchasesForLineItem, unlinkPurchase } from '../api/purchases';
 import type { BudgetSheet, SyncStatusResponse } from '../types/sheet';
 import type { TemplateListItem } from '../types/template';
+import type { Purchase } from '../types/purchase';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -250,6 +252,57 @@ function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: 
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [additionalIncomeValue, setAdditionalIncomeValue] = useState(parseFloat(sheet.additionalIncome).toString());
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set());
+  const [lineItemPurchases, setLineItemPurchases] = useState<Record<string, Purchase[]>>({});
+  const [loadingPurchases, setLoadingPurchases] = useState<Set<string>>(new Set());
+
+  async function toggleLineItemExpanded(lineItemId: string) {
+    const newExpanded = new Set(expandedLineItems);
+
+    if (newExpanded.has(lineItemId)) {
+      newExpanded.delete(lineItemId);
+      setExpandedLineItems(newExpanded);
+    } else {
+      newExpanded.add(lineItemId);
+      setExpandedLineItems(newExpanded);
+
+      // Load purchases if not already loaded
+      if (!lineItemPurchases[lineItemId]) {
+        setLoadingPurchases(prev => new Set(prev).add(lineItemId));
+        try {
+          const purchases = await getPurchasesForLineItem(lineItemId);
+          setLineItemPurchases(prev => ({ ...prev, [lineItemId]: purchases }));
+        } catch (err) {
+          console.error('Failed to load purchases:', err);
+        } finally {
+          setLoadingPurchases(prev => {
+            const next = new Set(prev);
+            next.delete(lineItemId);
+            return next;
+          });
+        }
+      }
+    }
+  }
+
+  async function handleUnlinkPurchase(purchaseId: string, lineItemId: string) {
+    try {
+      await unlinkPurchase(purchaseId);
+      // Remove the purchase from the local state
+      setLineItemPurchases(prev => ({
+        ...prev,
+        [lineItemId]: prev[lineItemId].filter(p => p.id !== purchaseId)
+      }));
+      // Reload the sheet to update actual amounts
+      const updatedSheet = await getSheetByDate(
+        new Date(sheet.year, sheet.month - 1).getFullYear(),
+        sheet.month
+      );
+      onSheetUpdate(updatedSheet);
+    } catch (err) {
+      console.error('Failed to unlink purchase:', err);
+    }
+  }
 
   const totalIncome = typeof sheet.totalIncome === 'string'
     ? parseFloat(sheet.totalIncome)
@@ -419,37 +472,108 @@ function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: 
             </div>
           </div>
           <div className="divide-y divide-gray-200">
-            {group.lineItems.map((item) => (
-              <div key={item.id} className="px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <span className="text-sm font-medium text-gray-900">{item.name}</span>
-                    {item.isRollover && (
-                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                        Rollover
-                      </span>
+            {group.lineItems.map((item) => {
+              const isExpanded = expandedLineItems.has(item.id);
+              const purchases = lineItemPurchases[item.id] || [];
+              const isLoading = loadingPurchases.has(item.id);
+
+              return (
+                <div key={item.id}>
+                  <div className="px-6 py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 flex items-center">
+                        <button
+                          onClick={() => toggleLineItemExpanded(item.id)}
+                          className="mr-2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                          title={isExpanded ? 'Hide purchases' : 'Show purchases'}
+                        >
+                          <svg
+                            className={`h-4 w-4 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        <span className="text-sm font-medium text-gray-900">{item.name}</span>
+                        {item.isRollover && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            Rollover
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-8 text-sm">
+                        <div className="text-gray-500">
+                          Budgeted: ${parseFloat(item.budgetedAmount).toLocaleString()}
+                        </div>
+                        <div className={`font-medium ${
+                          parseFloat(item.actualAmount) <= parseFloat(item.budgetedAmount)
+                            ? 'text-gray-900'
+                            : 'text-red-600'
+                        }`}>
+                          Actual: ${parseFloat(item.actualAmount).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    {item.isRollover && parseFloat(item.rolledOverAmount) !== 0 && (
+                      <div className="mt-1 ml-6 text-xs text-gray-500">
+                        Rolled over: ${parseFloat(item.rolledOverAmount).toLocaleString()}
+                      </div>
                     )}
                   </div>
-                  <div className="flex items-center space-x-8 text-sm">
-                    <div className="text-gray-500">
-                      Budgeted: ${parseFloat(item.budgetedAmount).toLocaleString()}
+
+                  {/* Expanded purchases section */}
+                  {isExpanded && (
+                    <div className="px-6 pb-4 bg-gray-50">
+                      <div className="ml-6 border-l-2 border-gray-200 pl-4">
+                        {isLoading ? (
+                          <p className="text-sm text-gray-500 py-2">Loading purchases...</p>
+                        ) : purchases.length === 0 ? (
+                          <p className="text-sm text-gray-500 py-2">No purchases linked to this item</p>
+                        ) : (
+                          <div className="space-y-2 py-2">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              Purchases ({purchases.length})
+                            </p>
+                            {purchases.map((purchase) => (
+                              <div
+                                key={purchase.id}
+                                className="flex items-center justify-between bg-white rounded-md px-3 py-2 text-sm"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-gray-500">
+                                      {new Date(purchase.purchaseDate).toLocaleDateString()}
+                                    </span>
+                                    <span className="font-medium text-gray-900">
+                                      ${parseFloat(purchase.amount).toLocaleString()}
+                                    </span>
+                                    {purchase.merchant && (
+                                      <span className="text-gray-600">{purchase.merchant}</span>
+                                    )}
+                                  </div>
+                                  {purchase.description && (
+                                    <p className="text-xs text-gray-500 mt-0.5">{purchase.description}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleUnlinkPurchase(purchase.id, item.id)}
+                                  className="ml-2 text-xs text-red-600 hover:text-red-800"
+                                  title="Unlink this purchase from the line item"
+                                >
+                                  Unlink
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className={`font-medium ${
-                      parseFloat(item.actualAmount) <= parseFloat(item.budgetedAmount)
-                        ? 'text-gray-900'
-                        : 'text-red-600'
-                    }`}>
-                      Actual: ${parseFloat(item.actualAmount).toLocaleString()}
-                    </div>
-                  </div>
+                  )}
                 </div>
-                {item.isRollover && parseFloat(item.rolledOverAmount) !== 0 && (
-                  <div className="mt-1 text-xs text-gray-500">
-                    Rolled over: ${parseFloat(item.rolledOverAmount).toLocaleString()}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}

@@ -33,5 +33,6 @@ export async function linkPurchase(
 export async function unlinkPurchase(purchaseId: string): Promise<Purchase> {
   return apiClient<Purchase>(`/purchases/${purchaseId}/unlink`, {
     method: 'PATCH',
+    body: {},
   });
 }
