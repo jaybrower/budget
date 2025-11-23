@@ -9,7 +9,11 @@
       "Bash(tree:*)",
       "Bash(dir /s /b \"c:\\code\\budget\\api\\src\")",
       "Bash(dir /s /b \"c:\\code\\budget\\ui\\src\")",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(cat:*)",
+      "Bash(xargs cat:*)",
+      "Bash(git -C /c/code/budget log --oneline --all -20)",
+      "Bash(git -C /c/code/budget diff HEAD ui/src/api/client.ts)"
     ],
     "deny": [],
     "ask": []
