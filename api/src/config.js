@@ -36,6 +36,26 @@ function getDatabasePassword() {
   return decrypt(encryptedPassword, encryptionKey);
 }
 
+function getPlaidCredentials() {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+
+  if (!encryptionKey) {
+    throw new Error('ENCRYPTION_KEY must be set for Plaid credentials');
+  }
+
+  const clientIdEncrypted = process.env.PLAID_CLIENT_ID_ENCRYPTED;
+  const secretEncrypted = process.env.PLAID_SECRET_ENCRYPTED;
+
+  if (!clientIdEncrypted || !secretEncrypted) {
+    throw new Error('PLAID_CLIENT_ID_ENCRYPTED and PLAID_SECRET_ENCRYPTED must be set');
+  }
+
+  return {
+    clientId: decrypt(clientIdEncrypted, encryptionKey),
+    secret: decrypt(secretEncrypted, encryptionKey)
+  };
+}
+
 function buildConnectionString() {
   // If full connection string is provided, use it
   if (process.env.DATABASE_URL) {
@@ -62,5 +82,11 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+  },
+  plaid: {
+    ...getPlaidCredentials(),
+    env: process.env.PLAID_ENV || 'sandbox',
+    products: (process.env.PLAID_PRODUCTS || 'transactions').split(','),
+    countryCodes: (process.env.PLAID_COUNTRY_CODES || 'US').split(',')
   }
 };
