@@ -26,7 +26,7 @@ export function Purchases() {
   // Form state
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('southwest_visa');
   const [merchant, setMerchant] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [purchaseDate, setPurchaseDate] = useState(
@@ -124,7 +124,7 @@ export function Purchases() {
       // Reset form
       setAmount('');
       setDescription('');
-      setPaymentMethod('');
+      setPaymentMethod('southwest_visa');
       setMerchant('');
       setReferenceNumber('');
       setPurchaseDate(new Date().toISOString().split('T')[0]);
@@ -265,14 +265,17 @@ export function Purchases() {
               >
                 Payment Method
               </label>
-              <input
-                type="text"
+              <select
                 id="paymentMethod"
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                placeholder="Credit card, cash, etc."
-              />
+              >
+                <option value="southwest_visa">Southwest Visa</option>
+                <option value="amex_ach">Amex ACH</option>
+                <option value="delta_amex">Delta Amex</option>
+                <option value="venmo_visa">Venmo Visa</option>
+              </select>
             </div>
 
             <div className="md:col-span-2">
