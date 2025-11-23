@@ -6,6 +6,7 @@ import type {
   SyncSheetRequest,
   SyncSheetResponse,
   SyncStatusResponse,
+  UpdateSheetRequest,
 } from '../types/sheet';
 
 export async function getSheets(): Promise<BudgetSheetListItem[]> {
@@ -39,5 +40,12 @@ export async function syncSheet(sheetId: string, data?: SyncSheetRequest): Promi
   return apiClient<SyncSheetResponse>(`/sheets/${sheetId}/sync`, {
     method: 'POST',
     body: data || {},
+  });
+}
+
+export async function updateSheet(sheetId: string, data: UpdateSheetRequest): Promise<BudgetSheet> {
+  return apiClient<BudgetSheet>(`/sheets/${sheetId}`, {
+    method: 'PATCH',
+    body: data,
   });
 }

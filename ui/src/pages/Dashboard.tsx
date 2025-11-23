@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
-import { getSheetByDate, createSheet, getSyncStatus, syncSheet } from '../api/sheets';
+import { getSheetByDate, createSheet, getSyncStatus, syncSheet, updateSheet } from '../api/sheets';
 import { getTemplates } from '../api/templates';
 import type { BudgetSheet, SyncStatusResponse } from '../types/sheet';
 import type { TemplateListItem } from '../types/template';
@@ -231,6 +231,7 @@ export function Dashboard() {
           syncStatus={syncStatus}
           isSyncing={isSyncing}
           onSync={handleSync}
+          onSheetUpdate={setSheet}
         />
       ) : null}
     </Layout>
@@ -242,12 +243,44 @@ interface BudgetDisplayProps {
   syncStatus: SyncStatusResponse | null;
   isSyncing: boolean;
   onSync: () => void;
+  onSheetUpdate: (sheet: BudgetSheet) => void;
 }
 
-function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync }: BudgetDisplayProps) {
+function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: BudgetDisplayProps) {
+  const [isEditingIncome, setIsEditingIncome] = useState(false);
+  const [additionalIncomeValue, setAdditionalIncomeValue] = useState(parseFloat(sheet.additionalIncome).toString());
+  const [isSaving, setIsSaving] = useState(false);
+
   const totalIncome = typeof sheet.totalIncome === 'string'
     ? parseFloat(sheet.totalIncome)
     : sheet.totalIncome;
+
+  const baseIncome = parseFloat(sheet.baseIncome);
+  const additionalIncome = parseFloat(sheet.additionalIncome);
+  const rolledOverIncome = parseFloat(sheet.rolledOverIncome);
+
+  async function handleSaveAdditionalIncome() {
+    const newValue = parseFloat(additionalIncomeValue);
+    if (isNaN(newValue) || newValue < 0) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const updatedSheet = await updateSheet(sheet.id, { additionalIncome: newValue });
+      onSheetUpdate(updatedSheet);
+      setIsEditingIncome(false);
+    } catch (err) {
+      console.error('Failed to update additional income:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setAdditionalIncomeValue(parseFloat(sheet.additionalIncome).toString());
+    setIsEditingIncome(false);
+  }
 
   return (
     <div className="space-y-6">
@@ -282,6 +315,68 @@ function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync }: BudgetDisplayPr
       {/* Summary */}
       <div className="bg-white shadow rounded-lg p-6">
         <h2 className="text-lg font-medium text-gray-900 mb-4">{sheet.name}</h2>
+
+        {/* Income Breakdown */}
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Income Breakdown</h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Base Income (from template)</span>
+              <span className="font-medium">${baseIncome.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Additional Income</span>
+              {isEditingIncome ? (
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-500">$</span>
+                  <input
+                    type="number"
+                    value={additionalIncomeValue}
+                    onChange={(e) => setAdditionalIncomeValue(e.target.value)}
+                    className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    min="0"
+                    step="0.01"
+                  />
+                  <button
+                    onClick={handleSaveAdditionalIncome}
+                    disabled={isSaving}
+                    className="px-2 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {isSaving ? '...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    disabled={isSaving}
+                    className="px-2 py-1 text-xs font-medium text-gray-600 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium">${additionalIncome.toLocaleString()}</span>
+                  <button
+                    onClick={() => setIsEditingIncome(true)}
+                    className="text-indigo-600 hover:text-indigo-800 text-xs"
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
+            </div>
+            {rolledOverIncome > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Rolled Over Income</span>
+                <span className="font-medium">${rolledOverIncome.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between pt-2 border-t border-blue-200">
+              <span className="font-medium text-gray-700">Total Income</span>
+              <span className="font-semibold text-gray-900">${totalIncome.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-gray-50 rounded-lg p-4">
             <dt className="text-sm font-medium text-gray-500">Total Income</dt>

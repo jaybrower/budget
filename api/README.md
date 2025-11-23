@@ -59,6 +59,7 @@ api/
 | GET | `/api/sheets/:year/:month` | Get budget by year/month | Yes |
 | GET | `/api/sheets/:sheetId` | Get budget by ID | Yes |
 | POST | `/api/sheets` | Create budget from template | Yes |
+| PATCH | `/api/sheets/:sheetId` | Update budget sheet | Yes |
 | GET | `/api/sheets/:sheetId/sync-status` | Check if budget is synced with template | Yes |
 | POST | `/api/sheets/:sheetId/sync` | Sync budget with template changes | Yes |
 
@@ -480,6 +481,21 @@ Response: Returns the full budget sheet with groups and line items (same structu
 curl http://localhost:3000/api/sheets/2025/11 \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
+
+Response: Returns the full budget sheet with groups and line items (same structure as "Create a Budget Sheet from Template").
+
+### Update a Budget Sheet
+
+```bash
+curl -X PATCH http://localhost:3000/api/sheets/<sheet-id> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "additionalIncome": 750
+  }'
+```
+
+Updates a budget sheet's properties. Currently supports updating `additionalIncome`. Cannot update finalized sheets.
 
 Response: Returns the full budget sheet with groups and line items (same structure as "Create a Budget Sheet from Template").
 

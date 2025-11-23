@@ -78,6 +78,10 @@ export interface SyncSheetRequest {
   updateExisting?: boolean;
 }
 
+export interface UpdateSheetRequest {
+  additionalIncome?: number;
+}
+
 export interface SyncStats {
   groupsAdded: number;
   itemsAdded: number;

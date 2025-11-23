@@ -189,6 +189,90 @@ export async function sheetsRoutes(fastify) {
     }
   });
 
+  // Update budget sheet
+  fastify.patch('/:sheetId', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['sheetId'],
+        properties: {
+          sheetId: { type: 'string', format: 'uuid' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          additionalIncome: { type: 'number', minimum: 0 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { sheetId } = request.params;
+    const { additionalIncome } = request.body;
+    const userId = request.user.userId;
+
+    try {
+      // Verify sheet belongs to user
+      const sheetCheck = await fastify.pg.query(
+        `SELECT id, is_finalized FROM budget_sheets WHERE id = $1 AND user_id = $2`,
+        [sheetId, userId]
+      );
+
+      if (sheetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget sheet not found'
+        });
+      }
+
+      if (sheetCheck.rows[0].is_finalized) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Cannot update a finalized budget sheet'
+        });
+      }
+
+      // Build update query dynamically based on provided fields
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+
+      if (additionalIncome !== undefined) {
+        updates.push(`additional_income = $${paramIndex}`);
+        values.push(additionalIncome);
+        paramIndex++;
+      }
+
+      if (updates.length === 0) {
+        // No updates to make, just return the current sheet
+        const sheet = await getSheetWithDetails(fastify, sheetId, userId);
+        return reply.send(sheet);
+      }
+
+      // Add updated_at
+      updates.push(`updated_at = NOW()`);
+
+      // Add sheetId to values
+      values.push(sheetId);
+
+      await fastify.pg.query(
+        `UPDATE budget_sheets SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+        values
+      );
+
+      // Fetch the updated sheet with full details
+      const sheet = await getSheetWithDetails(fastify, sheetId, userId);
+      return reply.send(sheet);
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to update budget sheet'
+      });
+    }
+  });
+
   // List all budget sheets for user
   fastify.get('/', {
     preHandler: [authenticate]
