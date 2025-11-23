@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Templates } from './pages/Templates';
 import { Purchases } from './pages/Purchases';
+import { LinkedAccounts } from './pages/LinkedAccounts';
 import { Account } from './pages/Account';
 
 function App() {
@@ -34,6 +35,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Purchases />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/linked-accounts"
+            element={
+              <ProtectedRoute>
+                <LinkedAccounts />
               </ProtectedRoute>
             }
           />

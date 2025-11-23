@@ -14,12 +14,14 @@ api/
     ├── config.js         # Environment & encrypted secrets handling
     ├── plugins/
     │   ├── postgres.js   # Database connection
-    │   └── jwt.js        # JWT authentication
+    │   ├── jwt.js        # JWT authentication
+    │   └── plaid.js      # Plaid API client
     ├── routes/
     │   ├── users.js      # User registration, login, profile
     │   ├── templates.js  # Budget template management
     │   ├── sheets.js     # Budget sheet management
-    │   └── purchases.js  # Purchase tracking and linking
+    │   ├── purchases.js  # Purchase tracking and linking
+    │   └── plaid.js      # Plaid integration for bank accounts
     └── utils/
         └── encrypt-secret.js  # CLI tool to encrypt passwords
 ```
@@ -73,6 +75,19 @@ api/
 | PATCH | `/api/purchases/:purchaseId/link` | Link purchase to line item | Yes |
 | PATCH | `/api/purchases/:purchaseId/unlink` | Unlink purchase from line item | Yes |
 
+### Plaid Integration
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/api/plaid/link-token` | Create link token for Plaid Link | Yes |
+| POST | `/api/plaid/exchange-token` | Exchange public token after linking | Yes |
+| GET | `/api/plaid/items` | Get all linked institutions | Yes |
+| DELETE | `/api/plaid/items/:itemId` | Unlink an institution | Yes |
+| GET | `/api/plaid/accounts` | Get all linked accounts | Yes |
+| PATCH | `/api/plaid/accounts/:accountId` | Update account payment method | Yes |
+| POST | `/api/plaid/sync` | Sync transactions from Plaid | Yes |
+| POST | `/api/plaid/webhook` | Handle Plaid webhooks | No |
+
 ### Health
 
 | Method | Endpoint | Description | Auth |
@@ -108,6 +123,11 @@ cp .env.example .env
 | `ENCRYPTION_KEY` | Key to decrypt password | - |
 | `JWT_SECRET` | Secret for signing JWTs | - |
 | `JWT_EXPIRES_IN` | Token expiration | `24h` |
+| `PLAID_CLIENT_ID_ENCRYPTED` | Encrypted Plaid client ID | - |
+| `PLAID_SECRET_ENCRYPTED` | Encrypted Plaid secret | - |
+| `PLAID_ENV` | Plaid environment | `sandbox` |
+| `PLAID_PRODUCTS` | Plaid products (comma-separated) | `transactions` |
+| `PLAID_COUNTRY_CODES` | Country codes (comma-separated) | `US` |
 
 ### Password Encryption for Production
 
@@ -730,6 +750,167 @@ Response:
   "updatedAt": "2024-01-01T00:00:00.000Z"
 }
 ```
+
+### Create a Plaid Link Token
+
+```bash
+curl -X POST http://localhost:3000/api/plaid/link-token \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+This creates a link token to initialize Plaid Link in the frontend.
+
+Response:
+```json
+{
+  "linkToken": "link-sandbox-..."
+}
+```
+
+### Exchange Public Token
+
+```bash
+curl -X POST http://localhost:3000/api/plaid/exchange-token \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "publicToken": "public-sandbox-...",
+    "metadata": {
+      "institution": {
+        "institution_id": "ins_123",
+        "name": "Chase"
+      }
+    }
+  }'
+```
+
+Called after a user successfully links their bank account via Plaid Link. Exchanges the public token for an access token and stores the linked accounts.
+
+Response:
+```json
+{
+  "message": "Account linked successfully",
+  "itemId": "uuid",
+  "accountsLinked": 2
+}
+```
+
+### Get Linked Institutions
+
+```bash
+curl http://localhost:3000/api/plaid/items \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Response:
+```json
+[
+  {
+    "id": "uuid",
+    "institutionId": "ins_123",
+    "institutionName": "Chase",
+    "lastSyncedAt": "2024-01-15T10:00:00.000Z",
+    "isActive": true,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "accounts": [
+      {
+        "id": "uuid",
+        "accountId": "abc123",
+        "name": "Checking",
+        "officialName": "Chase Total Checking",
+        "type": "depository",
+        "subtype": "checking",
+        "mask": "1234",
+        "paymentMethod": null,
+        "isActive": true
+      }
+    ]
+  }
+]
+```
+
+### Unlink an Institution
+
+```bash
+curl -X DELETE http://localhost:3000/api/plaid/items/<item-id> \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Removes the connection to a bank. This also deactivates all associated accounts.
+
+Response:
+```json
+{
+  "message": "Item unlinked successfully"
+}
+```
+
+### Get All Linked Accounts
+
+```bash
+curl http://localhost:3000/api/plaid/accounts \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Response:
+```json
+[
+  {
+    "id": "uuid",
+    "accountId": "abc123",
+    "name": "Checking",
+    "officialName": "Chase Total Checking",
+    "type": "depository",
+    "subtype": "checking",
+    "mask": "1234",
+    "paymentMethod": "chase_checking",
+    "isActive": true,
+    "institutionName": "Chase"
+  }
+]
+```
+
+### Update Account Payment Method
+
+```bash
+curl -X PATCH http://localhost:3000/api/plaid/accounts/<account-id> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "paymentMethod": "southwest_visa"
+  }'
+```
+
+Maps a Plaid account to a payment method used in purchases. When transactions are synced, they will use this payment method.
+
+Response:
+```json
+{
+  "message": "Account updated successfully"
+}
+```
+
+### Sync Transactions
+
+```bash
+curl -X POST http://localhost:3000/api/plaid/sync \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Fetches new transactions from all linked Plaid accounts and creates purchases for them. Uses Plaid's sync API to efficiently get only new/modified/removed transactions since the last sync.
+
+Response:
+```json
+{
+  "added": 15,
+  "modified": 2,
+  "removed": 0
+}
+```
+
+- `added` - Number of new transactions imported as purchases
+- `modified` - Number of existing purchases updated
+- `removed` - Number of purchases deleted (pending transactions that were removed)
 
 ## Authentication
 

@@ -552,6 +552,9 @@ function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: 
                                     {purchase.merchant && (
                                       <span className="text-gray-600">{purchase.merchant}</span>
                                     )}
+                                    {purchase.paymentMethod && (
+                                      <span className="text-gray-500 text-xs">({purchase.paymentMethod})</span>
+                                    )}
                                   </div>
                                   {purchase.description && (
                                     <p className="text-xs text-gray-500 mt-0.5">{purchase.description}</p>
