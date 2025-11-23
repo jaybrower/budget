@@ -31,7 +31,8 @@ export async function apiClient<T>(
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`/api${endpoint}`, config);
+  const apiBase = import.meta.env.VITE_API_URL || '/api';
+  const response = await fetch(`${apiBase}${endpoint}`, config);
 
   if (response.status === 401) {
     localStorage.removeItem('token');
