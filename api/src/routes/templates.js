@@ -330,6 +330,104 @@ export async function templatesRoutes(fastify) {
     }
   });
 
+  // Update group in template
+  fastify.put('/:templateId/groups/:groupId', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['templateId', 'groupId'],
+        properties: {
+          templateId: { type: 'string', format: 'uuid' },
+          groupId: { type: 'string', format: 'uuid' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          description: { type: 'string' },
+          sortOrder: { type: 'integer', minimum: 0 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { templateId, groupId } = request.params;
+    const { name, description, sortOrder } = request.body;
+    const userId = request.user.userId;
+
+    try {
+      // Verify ownership of the group
+      const groupCheck = await fastify.pg.query(
+        `SELECT tg.id
+         FROM template_groups tg
+         JOIN budget_templates bt ON tg.template_id = bt.id
+         WHERE tg.id = $1 AND tg.template_id = $2 AND bt.user_id = $3`,
+        [groupId, templateId, userId]
+      );
+
+      if (groupCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Group not found'
+        });
+      }
+
+      // Build dynamic update query based on provided fields
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramIndex++}`);
+        values.push(name);
+      }
+      if (description !== undefined) {
+        updates.push(`description = $${paramIndex++}`);
+        values.push(description);
+      }
+      if (sortOrder !== undefined) {
+        updates.push(`sort_order = $${paramIndex++}`);
+        values.push(sortOrder);
+      }
+
+      if (updates.length === 0) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'No fields to update'
+        });
+      }
+
+      updates.push(`updated_at = NOW()`);
+      values.push(groupId);
+
+      const result = await fastify.pg.query(
+        `UPDATE template_groups
+         SET ${updates.join(', ')}
+         WHERE id = $${paramIndex}
+         RETURNING id, name, description, sort_order, created_at, updated_at`,
+        values
+      );
+
+      const group = result.rows[0];
+
+      return reply.send({
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        sortOrder: group.sort_order,
+        createdAt: group.created_at,
+        updatedAt: group.updated_at
+      });
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to update group'
+      });
+    }
+  });
+
   // Add line item to group
   fastify.post('/:templateId/groups/:groupId/items', {
     preHandler: [authenticate],

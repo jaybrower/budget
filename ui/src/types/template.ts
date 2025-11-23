@@ -50,10 +50,12 @@ export interface CreateTemplateRequest {
 export interface CreateGroupRequest {
   name: string;
   description?: string;
+  sortOrder?: number;
 }
 
 export interface CreateLineItemRequest {
   name: string;
   budgetedAmount: number;
   isRollover: boolean;
+  sortOrder?: number;
 }

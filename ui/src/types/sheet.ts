@@ -73,3 +73,27 @@ export interface CreateSheetRequest {
   additionalIncome?: number;
   carryOverRollovers?: boolean;
 }
+
+export interface SyncSheetRequest {
+  updateExisting?: boolean;
+}
+
+export interface SyncStats {
+  groupsAdded: number;
+  itemsAdded: number;
+  groupsUpdated: number;
+  itemsUpdated: number;
+}
+
+export interface SyncSheetResponse {
+  sheet: BudgetSheet;
+  syncStats: SyncStats;
+}
+
+export interface SyncStatusResponse {
+  sheetId: string;
+  templateId: string;
+  sheetSyncedAt: string;
+  templateUpdatedAt: string;
+  isSynced: boolean;
+}

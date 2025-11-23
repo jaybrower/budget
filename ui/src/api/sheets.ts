@@ -3,6 +3,9 @@ import type {
   BudgetSheet,
   BudgetSheetListItem,
   CreateSheetRequest,
+  SyncSheetRequest,
+  SyncSheetResponse,
+  SyncStatusResponse,
 } from '../types/sheet';
 
 export async function getSheets(): Promise<BudgetSheetListItem[]> {
@@ -25,5 +28,16 @@ export async function createSheet(data: CreateSheetRequest): Promise<BudgetSheet
   return apiClient<BudgetSheet>('/sheets', {
     method: 'POST',
     body: data,
+  });
+}
+
+export async function getSyncStatus(sheetId: string): Promise<SyncStatusResponse> {
+  return apiClient<SyncStatusResponse>(`/sheets/${sheetId}/sync-status`);
+}
+
+export async function syncSheet(sheetId: string, data?: SyncSheetRequest): Promise<SyncSheetResponse> {
+  return apiClient<SyncSheetResponse>(`/sheets/${sheetId}/sync`, {
+    method: 'POST',
+    body: data || {},
   });
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
-import { getSheetByDate, createSheet } from '../api/sheets';
+import { getSheetByDate, createSheet, getSyncStatus, syncSheet } from '../api/sheets';
 import { getTemplates } from '../api/templates';
-import type { BudgetSheet } from '../types/sheet';
+import type { BudgetSheet, SyncStatusResponse } from '../types/sheet';
 import type { TemplateListItem } from '../types/template';
 
 export function Dashboard() {
@@ -17,6 +17,8 @@ export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const isCurrentMonth = selectedYear === now.getFullYear() && selectedMonth === now.getMonth() + 1;
 
@@ -29,10 +31,21 @@ export function Dashboard() {
     setError(null);
     setNotFound(false);
     setSheet(null);
+    setSyncStatus(null);
 
     try {
       const sheetData = await getSheetByDate(selectedYear, selectedMonth);
       setSheet(sheetData);
+
+      // Check sync status if sheet has a template
+      if (sheetData.templateId) {
+        try {
+          const status = await getSyncStatus(sheetData.id);
+          setSyncStatus(status);
+        } catch {
+          // Ignore sync status errors
+        }
+      }
     } catch (err) {
       if (err instanceof Error && err.message.includes('No budget sheet found')) {
         setNotFound(true);
@@ -52,6 +65,28 @@ export function Dashboard() {
       }
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleSync() {
+    if (!sheet) return;
+
+    try {
+      setIsSyncing(true);
+      const result = await syncSheet(sheet.id);
+      setSheet(result.sheet);
+      setSyncStatus(null); // Clear sync status after successful sync
+
+      // Show success message with stats
+      const { groupsAdded, itemsAdded } = result.syncStats;
+      if (groupsAdded > 0 || itemsAdded > 0) {
+        // Could add a toast notification here
+        console.log(`Synced: ${groupsAdded} groups and ${itemsAdded} items added`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync with template');
+    } finally {
+      setIsSyncing(false);
     }
   }
 
@@ -191,7 +226,12 @@ export function Dashboard() {
           )}
         </div>
       ) : sheet ? (
-        <BudgetDisplay sheet={sheet} />
+        <BudgetDisplay
+          sheet={sheet}
+          syncStatus={syncStatus}
+          isSyncing={isSyncing}
+          onSync={handleSync}
+        />
       ) : null}
     </Layout>
   );
@@ -199,15 +239,46 @@ export function Dashboard() {
 
 interface BudgetDisplayProps {
   sheet: BudgetSheet;
+  syncStatus: SyncStatusResponse | null;
+  isSyncing: boolean;
+  onSync: () => void;
 }
 
-function BudgetDisplay({ sheet }: BudgetDisplayProps) {
+function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync }: BudgetDisplayProps) {
   const totalIncome = typeof sheet.totalIncome === 'string'
     ? parseFloat(sheet.totalIncome)
     : sheet.totalIncome;
 
   return (
     <div className="space-y-6">
+      {/* Sync Warning */}
+      {syncStatus && !syncStatus.isSynced && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <svg className="h-5 w-5 text-yellow-400 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-yellow-800">
+                  Template has been updated
+                </p>
+                <p className="text-sm text-yellow-700">
+                  The template was modified after this budget was created. Sync to add new groups or items.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onSync}
+              disabled={isSyncing}
+              className="ml-4 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 disabled:opacity-50"
+            >
+              {isSyncing ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="bg-white shadow rounded-lg p-6">
         <h2 className="text-lg font-medium text-gray-900 mb-4">{sheet.name}</h2>

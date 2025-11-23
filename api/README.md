@@ -43,6 +43,7 @@ api/
 | GET | `/api/templates/default` | Get user's default template with groups and items | Yes |
 | POST | `/api/templates` | Create new template | Yes |
 | POST | `/api/templates/:templateId/groups` | Add group to template | Yes |
+| PUT | `/api/templates/:templateId/groups/:groupId` | Update group | Yes |
 | POST | `/api/templates/:templateId/groups/:groupId/items` | Add line item to group | Yes |
 | PUT | `/api/templates/:templateId/groups/:groupId/items/:itemId` | Update line item | Yes |
 | DELETE | `/api/templates/:templateId/groups/:groupId/items/:itemId` | Remove line item | Yes |
@@ -58,6 +59,8 @@ api/
 | GET | `/api/sheets/:year/:month` | Get budget by year/month | Yes |
 | GET | `/api/sheets/:sheetId` | Get budget by ID | Yes |
 | POST | `/api/sheets` | Create budget from template | Yes |
+| GET | `/api/sheets/:sheetId/sync-status` | Check if budget is synced with template | Yes |
+| POST | `/api/sheets/:sheetId/sync` | Sync budget with template changes | Yes |
 
 ### Purchases
 
@@ -249,6 +252,33 @@ Response:
   "updatedAt": "2024-01-01T00:00:00.000Z"
 }
 ```
+
+### Update a Group
+
+```bash
+curl -X PUT http://localhost:3000/api/templates/<template-id>/groups/<group-id> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "name": "Housing & Utilities",
+    "description": "Housing and utility expenses",
+    "sortOrder": 1
+  }'
+```
+
+Response:
+```json
+{
+  "id": "uuid",
+  "name": "Housing & Utilities",
+  "description": "Housing and utility expenses",
+  "sortOrder": 1,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+Note: All fields are optional in the request body. Only the fields provided will be updated.
 
 ### Add a Line Item to Group
 
@@ -483,6 +513,85 @@ Response:
   }
 ]
 ```
+
+### Check Budget Sheet Sync Status
+
+```bash
+curl http://localhost:3000/api/sheets/<sheet-id>/sync-status \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Checks if a budget sheet is up-to-date with its template by comparing timestamps. Returns `isSynced: true` if the sheet was last synced after the template was last updated.
+
+Response:
+```json
+{
+  "sheetId": "uuid",
+  "templateId": "uuid",
+  "sheetSyncedAt": "2024-01-15T10:00:00.000Z",
+  "templateUpdatedAt": "2024-01-10T08:00:00.000Z",
+  "isSynced": true
+}
+```
+
+If `isSynced` is `false`, the template has been modified since the budget sheet was created, and you may want to call the sync endpoint to update the sheet.
+
+### Sync Budget Sheet with Template
+
+```bash
+curl -X POST http://localhost:3000/api/sheets/<sheet-id>/sync \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "updateExisting": false
+  }'
+```
+
+This syncs a budget sheet with changes made to its template. Use this when you've added new groups or line items to a template and want to update existing budgets built from that template.
+
+Options:
+- `updateExisting` (default: false) - If true, also updates names, descriptions, budgeted amounts, and sort orders of existing groups and line items to match the template. If false, only adds new groups and line items.
+
+The endpoint preserves all existing data:
+- `actual_amount` (sum of linked purchases) is never modified
+- `rolled_over_amount` is never modified
+
+Response:
+```json
+{
+  "sheet": {
+    "id": "uuid",
+    "templateId": "uuid",
+    "name": "Monthly Budget - 2025/11",
+    "year": 2025,
+    "month": 11,
+    "groups": [
+      {
+        "id": "uuid",
+        "name": "Housing",
+        "lineItems": [...]
+      },
+      {
+        "id": "uuid",
+        "name": "Transportation",
+        "lineItems": [...]
+      }
+    ]
+  },
+  "syncStats": {
+    "groupsAdded": 1,
+    "itemsAdded": 3,
+    "groupsUpdated": 0,
+    "itemsUpdated": 0
+  }
+}
+```
+
+The `syncStats` shows what was changed:
+- `groupsAdded` - Number of new groups added from the template
+- `itemsAdded` - Number of new line items added from the template
+- `groupsUpdated` - Number of existing groups updated (only when `updateExisting: true`)
+- `itemsUpdated` - Number of existing line items updated (only when `updateExisting: true`)
 
 ### Create a Purchase
 

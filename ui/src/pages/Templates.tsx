@@ -181,11 +181,11 @@ export function Templates() {
     }
   }
 
-  async function handleUpdateGroup(groupId: string, name: string) {
+  async function handleUpdateGroup(groupId: string, data: { name?: string; sortOrder?: number }) {
     if (!currentTemplate) return;
 
     try {
-      await updateGroup(currentTemplate.id, groupId, { name });
+      await updateGroup(currentTemplate.id, groupId, data);
       await loadTemplate(currentTemplate.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update group');
@@ -195,7 +195,7 @@ export function Templates() {
   async function handleUpdateLineItem(
     groupId: string,
     itemId: string,
-    data: { name?: string; budgetedAmount?: number; isRollover?: boolean }
+    data: { name?: string; budgetedAmount?: number; isRollover?: boolean; sortOrder?: number }
   ) {
     if (!currentTemplate) return;
 
@@ -387,7 +387,7 @@ export function Templates() {
                 key={group.id}
                 group={group}
                 onDeleteGroup={() => handleDeleteGroup(group.id)}
-                onUpdateGroup={(name) => handleUpdateGroup(group.id, name)}
+                onUpdateGroup={(data) => handleUpdateGroup(group.id, data)}
                 onAddItem={(e) => handleAddLineItem(e, group.id)}
                 onDeleteItem={(itemId) => handleDeleteLineItem(group.id, itemId)}
                 onUpdateItem={(itemId, data) => handleUpdateLineItem(group.id, itemId, data)}
@@ -496,10 +496,10 @@ export function Templates() {
 interface GroupEditorProps {
   group: Group;
   onDeleteGroup: () => void;
-  onUpdateGroup: (name: string) => void;
+  onUpdateGroup: (data: { name?: string; sortOrder?: number }) => void;
   onAddItem: (e: React.FormEvent) => void;
   onDeleteItem: (itemId: string) => void;
-  onUpdateItem: (itemId: string, data: { name?: string; budgetedAmount?: number; isRollover?: boolean }) => void;
+  onUpdateItem: (itemId: string, data: { name?: string; budgetedAmount?: number; isRollover?: boolean; sortOrder?: number }) => void;
   isAddingItem: boolean;
   setIsAddingItem: (val: boolean) => void;
   newItemName: string;
@@ -528,12 +528,22 @@ function GroupEditor({
 }: GroupEditorProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(group.name);
+  const [isEditingSortOrder, setIsEditingSortOrder] = useState(false);
+  const [editSortOrder, setEditSortOrder] = useState(group.sortOrder.toString());
 
   const handleSaveName = () => {
     if (editName.trim() && editName !== group.name) {
-      onUpdateGroup(editName.trim());
+      onUpdateGroup({ name: editName.trim() });
     }
     setIsEditingName(false);
+  };
+
+  const handleSaveSortOrder = () => {
+    const newSortOrder = parseInt(editSortOrder, 10);
+    if (!isNaN(newSortOrder) && newSortOrder !== group.sortOrder) {
+      onUpdateGroup({ sortOrder: newSortOrder });
+    }
+    setIsEditingSortOrder(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -545,28 +555,62 @@ function GroupEditor({
     }
   };
 
+  const handleSortOrderKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSaveSortOrder();
+    } else if (e.key === 'Escape') {
+      setEditSortOrder(group.sortOrder.toString());
+      setIsEditingSortOrder(false);
+    }
+  };
+
   return (
     <div className="border border-gray-200 rounded-lg">
       <div className="bg-gray-50 px-4 py-3 flex items-center justify-between rounded-t-lg">
-        {isEditingName ? (
-          <input
-            type="text"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onBlur={handleSaveName}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="text-sm font-medium text-gray-900 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          />
-        ) : (
-          <h3
-            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-indigo-600"
-            onClick={() => setIsEditingName(true)}
-            title="Click to edit"
-          >
-            {group.name}
-          </h3>
-        )}
+        <div className="flex items-center space-x-4">
+          {isEditingName ? (
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleSaveName}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              className="text-sm font-medium text-gray-900 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          ) : (
+            <h3
+              className="text-sm font-medium text-gray-900 cursor-pointer hover:text-indigo-600"
+              onClick={() => setIsEditingName(true)}
+              title="Click to edit"
+            >
+              {group.name}
+            </h3>
+          )}
+          <div className="flex items-center space-x-1">
+            <span className="text-xs text-gray-500">Order:</span>
+            {isEditingSortOrder ? (
+              <input
+                type="number"
+                value={editSortOrder}
+                onChange={(e) => setEditSortOrder(e.target.value)}
+                onBlur={handleSaveSortOrder}
+                onKeyDown={handleSortOrderKeyDown}
+                autoFocus
+                min="0"
+                className="w-16 text-xs rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            ) : (
+              <span
+                className="text-xs text-gray-600 cursor-pointer hover:text-indigo-600"
+                onClick={() => setIsEditingSortOrder(true)}
+                title="Click to edit sort order"
+              >
+                {group.sortOrder}
+              </span>
+            )}
+          </div>
+        </div>
         <button
           onClick={onDeleteGroup}
           className="text-sm text-red-600 hover:text-red-800"
@@ -670,7 +714,7 @@ function GroupEditor({
 interface LineItemRowProps {
   item: LineItem;
   onDelete: () => void;
-  onUpdate: (data: { name?: string; budgetedAmount?: number; isRollover?: boolean }) => void;
+  onUpdate: (data: { name?: string; budgetedAmount?: number; isRollover?: boolean; sortOrder?: number }) => void;
 }
 
 function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
@@ -678,9 +722,10 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
   const [editName, setEditName] = useState(item.name);
   const [editAmount, setEditAmount] = useState(item.budgetedAmount);
   const [editIsRollover, setEditIsRollover] = useState(item.isRollover);
+  const [editSortOrder, setEditSortOrder] = useState(item.sortOrder.toString());
 
   const handleSave = () => {
-    const updates: { name?: string; budgetedAmount?: number; isRollover?: boolean } = {};
+    const updates: { name?: string; budgetedAmount?: number; isRollover?: boolean; sortOrder?: number } = {};
 
     if (editName.trim() !== item.name) {
       updates.name = editName.trim();
@@ -690,6 +735,10 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
     }
     if (editIsRollover !== item.isRollover) {
       updates.isRollover = editIsRollover;
+    }
+    const newSortOrder = parseInt(editSortOrder, 10);
+    if (!isNaN(newSortOrder) && newSortOrder !== item.sortOrder) {
+      updates.sortOrder = newSortOrder;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -702,6 +751,7 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
     setEditName(item.name);
     setEditAmount(item.budgetedAmount);
     setEditIsRollover(item.isRollover);
+    setEditSortOrder(item.sortOrder.toString());
     setIsEditing(false);
   };
 
@@ -716,13 +766,14 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
   if (isEditing) {
     return (
       <div className="py-2 border-b border-gray-100 last:border-b-0 space-y-2">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <input
             type="text"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onKeyDown={handleKeyDown}
             autoFocus
+            placeholder="Name"
             className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           />
           <input
@@ -732,6 +783,16 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
             onKeyDown={handleKeyDown}
             min="0"
             step="0.01"
+            placeholder="Amount"
+            className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          />
+          <input
+            type="number"
+            value={editSortOrder}
+            onChange={(e) => setEditSortOrder(e.target.value)}
+            onKeyDown={handleKeyDown}
+            min="0"
+            placeholder="Order"
             className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           />
         </div>
@@ -782,6 +843,13 @@ function LineItemRow({ item, onDelete, onUpdate }: LineItemRowProps) {
             Rollover
           </span>
         )}
+        <span
+          className="ml-2 text-xs text-gray-400 cursor-pointer hover:text-indigo-600"
+          onClick={() => setIsEditing(true)}
+          title="Click to edit sort order"
+        >
+          #{item.sortOrder}
+        </span>
       </div>
       <div className="flex items-center space-x-4">
         <span

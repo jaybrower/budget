@@ -235,6 +235,156 @@ export async function sheetsRoutes(fastify) {
       });
     }
   });
+
+  // Check if budget sheet is in sync with its template
+  fastify.get('/:sheetId/sync-status', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['sheetId'],
+        properties: {
+          sheetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { sheetId } = request.params;
+    const userId = request.user.userId;
+
+    try {
+      const result = await fastify.pg.query(
+        `SELECT
+          bs.id,
+          bs.template_id,
+          bs.synced_at as sheet_synced_at,
+          bt.updated_at as template_updated_at,
+          bs.synced_at >= bt.updated_at as is_synced
+         FROM budget_sheets bs
+         LEFT JOIN budget_templates bt ON bt.id = bs.template_id
+         WHERE bs.id = $1 AND bs.user_id = $2`,
+        [sheetId, userId]
+      );
+
+      if (result.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget sheet not found'
+        });
+      }
+
+      const row = result.rows[0];
+
+      if (!row.template_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Budget sheet has no associated template'
+        });
+      }
+
+      return reply.send({
+        sheetId: row.id,
+        templateId: row.template_id,
+        sheetSyncedAt: row.sheet_synced_at,
+        templateUpdatedAt: row.template_updated_at,
+        isSynced: row.is_synced
+      });
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to check sync status'
+      });
+    }
+  });
+
+  // Sync budget sheet with its template
+  fastify.post('/:sheetId/sync', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['sheetId'],
+        properties: {
+          sheetId: { type: 'string', format: 'uuid' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          updateExisting: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { sheetId } = request.params;
+    const { updateExisting = false } = request.body || {};
+    const userId = request.user.userId;
+
+    try {
+      // Verify sheet belongs to user and has a template
+      const sheetCheck = await fastify.pg.query(
+        `SELECT id, template_id, is_finalized FROM budget_sheets WHERE id = $1 AND user_id = $2`,
+        [sheetId, userId]
+      );
+
+      if (sheetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget sheet not found'
+        });
+      }
+
+      const sheet = sheetCheck.rows[0];
+
+      if (!sheet.template_id) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Budget sheet has no associated template to sync with'
+        });
+      }
+
+      if (sheet.is_finalized) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Cannot sync a finalized budget sheet'
+        });
+      }
+
+      // Call the sync function
+      const syncResult = await fastify.pg.query(
+        `SELECT * FROM sync_sheet_with_template($1, $2)`,
+        [sheetId, updateExisting]
+      );
+
+      const syncStats = syncResult.rows[0];
+
+      // Update synced_at timestamp
+      await fastify.pg.query(
+        `UPDATE budget_sheets SET synced_at = NOW() WHERE id = $1`,
+        [sheetId]
+      );
+
+      // Fetch the updated sheet with full details
+      const updatedSheet = await getSheetWithDetails(fastify, sheetId, userId);
+
+      return reply.send({
+        sheet: updatedSheet,
+        syncStats: {
+          groupsAdded: syncStats.groups_added,
+          itemsAdded: syncStats.items_added,
+          groupsUpdated: syncStats.groups_updated,
+          itemsUpdated: syncStats.items_updated
+        }
+      });
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to sync budget sheet with template'
+      });
+    }
+  });
 }
 
 // Helper function to get sheet with full details
