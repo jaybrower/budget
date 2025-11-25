@@ -21,6 +21,19 @@ export async function usersRoutes(fastify) {
     const { email, password, firstName, lastName } = request.body;
 
     try {
+      // Check if email is in the allowed list
+      const allowedEmail = await fastify.pg.query(
+        'SELECT id FROM allowed_emails WHERE email = $1',
+        [email.toLowerCase()]
+      );
+
+      if (allowedEmail.rows.length === 0) {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'This email address is not authorized to register'
+        });
+      }
+
       // Check if user already exists
       const existingUser = await fastify.pg.query(
         'SELECT id FROM users WHERE email = $1',
