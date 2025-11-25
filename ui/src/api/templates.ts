@@ -17,8 +17,8 @@ export async function getTemplate(id: string): Promise<Template> {
   return apiClient<Template>(`/templates?id=${id}`);
 }
 
-export async function getDefaultTemplate(): Promise<Template> {
-  return apiClient<Template>('/templates/default');
+export async function getDefaultTemplate(budgetId: string): Promise<Template> {
+  return apiClient<Template>(`/templates/default?budgetId=${budgetId}`);
 }
 
 export async function createTemplate(data: CreateTemplateRequest): Promise<Template> {

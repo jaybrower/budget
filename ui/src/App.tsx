@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { BudgetProvider } from './contexts/BudgetContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -8,12 +9,14 @@ import { Templates } from './pages/Templates';
 import { Purchases } from './pages/Purchases';
 import { LinkedAccounts } from './pages/LinkedAccounts';
 import { Account } from './pages/Account';
+import { BudgetSettings } from './pages/BudgetSettings';
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <BudgetProvider>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
@@ -56,8 +59,17 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/budget-settings"
+            element={
+              <ProtectedRoute>
+                <BudgetSettings />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </BudgetProvider>
       </AuthProvider>
     </BrowserRouter>
   );

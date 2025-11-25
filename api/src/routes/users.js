@@ -60,6 +60,17 @@ export async function usersRoutes(fastify) {
 
       const user = result.rows[0];
 
+      // Auto-accept any pending invitations for this email
+      try {
+        await fastify.pg.query(
+          'SELECT * FROM auto_accept_pending_invitations($1)',
+          [user.id]
+        );
+      } catch (inviteErr) {
+        // Log but don't fail registration if invitation acceptance fails
+        request.log.warn({ err: inviteErr }, 'Failed to auto-accept invitations');
+      }
+
       // Generate JWT
       const token = fastify.jwt.sign({
         userId: user.id,

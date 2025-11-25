@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { BudgetSelector } from './BudgetSelector';
+import { InvitationNotifications } from './InvitationNotifications';
 import type { ReactNode } from 'react';
 
 interface LayoutProps {
@@ -78,9 +80,22 @@ export function Layout({ children }: LayoutProps) {
                 >
                   Account
                 </NavLink>
+                <NavLink
+                  to="/budget-settings"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    }`
+                  }
+                >
+                  Budget Settings
+                </NavLink>
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <BudgetSelector />
               <span className="text-gray-700">
                 {user?.firstName || user?.email}
               </span>
@@ -96,7 +111,10 @@ export function Layout({ children }: LayoutProps) {
       </nav>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">{children}</div>
+        <div className="px-4 py-6 sm:px-0">
+          <InvitationNotifications />
+          {children}
+        </div>
       </main>
     </div>
   );
