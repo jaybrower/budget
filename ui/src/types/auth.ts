@@ -18,6 +18,18 @@ export interface LoginResponse {
   token: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface RegisterResponse {
+  user: User;
+  token: string;
+}
+
 export interface AuthState {
   user: User | null;
   token: string | null;
