@@ -9,12 +9,13 @@ export async function templatesRoutes(fastify) {
       querystring: {
         type: 'object',
         properties: {
-          id: { type: 'string', format: 'uuid' }
+          id: { type: 'string', format: 'uuid' },
+          budgetId: { type: 'string', format: 'uuid' }
         }
       }
     }
   }, async (request, reply) => {
-    const { id } = request.query;
+    const { id, budgetId } = request.query;
     const userId = request.user.userId;
 
     try {
@@ -23,9 +24,10 @@ export async function templatesRoutes(fastify) {
       if (id) {
         // Get specific template with groups and line items
         result = await fastify.pg.query(
-          `SELECT id, name, description, base_income, is_default, created_at, updated_at
-           FROM budget_templates
-           WHERE id = $1 AND user_id = $2`,
+          `SELECT bt.id, bt.name, bt.description, bt.base_income, bt.is_default, bt.created_at, bt.updated_at
+           FROM budget_templates bt
+           JOIN budget_users bu ON bu.budget_id = bt.budget_id
+           WHERE bt.id = $1 AND bu.user_id = $2`,
           [id, userId]
         );
 
@@ -87,13 +89,46 @@ export async function templatesRoutes(fastify) {
           updatedAt: template.updated_at,
           groups
         });
-      } else {
-        // Get all templates for user (without nested data)
+      } else if (budgetId) {
+        // Get templates for a specific budget
+        // First verify user has access to this budget
+        const accessCheck = await fastify.pg.query(
+          `SELECT 1 FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+          [budgetId, userId]
+        );
+
+        if (accessCheck.rows.length === 0) {
+          return reply.status(404).send({
+            error: 'Not Found',
+            message: 'Budget not found'
+          });
+        }
+
         result = await fastify.pg.query(
-          `SELECT id, name, description, base_income, is_default, created_at, updated_at
-           FROM budget_templates
-           WHERE user_id = $1
-           ORDER BY is_default DESC, name`,
+          `SELECT bt.id, bt.name, bt.description, bt.base_income, bt.is_default, bt.created_at, bt.updated_at
+           FROM budget_templates bt
+           WHERE bt.budget_id = $1
+           ORDER BY bt.is_default DESC, bt.name`,
+          [budgetId]
+        );
+
+        return reply.send(result.rows.map(template => ({
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          baseIncome: template.base_income,
+          isDefault: template.is_default,
+          createdAt: template.created_at,
+          updatedAt: template.updated_at
+        })));
+      } else {
+        // Get all templates for budgets user has access to
+        result = await fastify.pg.query(
+          `SELECT bt.id, bt.name, bt.description, bt.base_income, bt.is_default, bt.created_at, bt.updated_at
+           FROM budget_templates bt
+           JOIN budget_users bu ON bu.budget_id = bt.budget_id
+           WHERE bu.user_id = $1
+           ORDER BY bt.is_default DESC, bt.name`,
           [userId]
         );
 
@@ -118,17 +153,40 @@ export async function templatesRoutes(fastify) {
 
   // Get current user's default template
   fastify.get('/default', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
 
     try {
-      // Get the default template for this user
+      // Verify user has access to this budget
+      const accessCheck = await fastify.pg.query(
+        `SELECT 1 FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (accessCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      // Get the default template for this budget
       const result = await fastify.pg.query(
-        `SELECT id, name, description, base_income, is_default, created_at, updated_at
-         FROM budget_templates
-         WHERE user_id = $1 AND is_default = true`,
-        [userId]
+        `SELECT bt.id, bt.name, bt.description, bt.base_income, bt.is_default, bt.created_at, bt.updated_at
+         FROM budget_templates bt
+         WHERE bt.budget_id = $1 AND bt.is_default = true`,
+        [budgetId]
       );
 
       if (result.rows.length === 0) {
@@ -204,9 +262,10 @@ export async function templatesRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['name'],
+        required: ['name', 'budgetId'],
         properties: {
           name: { type: 'string', minLength: 1, maxLength: 255 },
+          budgetId: { type: 'string', format: 'uuid' },
           description: { type: 'string' },
           baseIncome: { type: 'number', minimum: 0 },
           isDefault: { type: 'boolean' }
@@ -214,23 +273,43 @@ export async function templatesRoutes(fastify) {
       }
     }
   }, async (request, reply) => {
-    const { name, description, baseIncome, isDefault } = request.body;
+    const { name, budgetId, description, baseIncome, isDefault } = request.body;
     const userId = request.user.userId;
 
     try {
-      // If setting as default, unset other defaults first
+      // Verify user has editor or owner role for this budget
+      const roleCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (roleCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      if (roleCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot create templates'
+        });
+      }
+
+      // If setting as default, unset other defaults for this budget
       if (isDefault) {
         await fastify.pg.query(
-          `UPDATE budget_templates SET is_default = false WHERE user_id = $1`,
-          [userId]
+          `UPDATE budget_templates SET is_default = false WHERE budget_id = $1`,
+          [budgetId]
         );
       }
 
       const result = await fastify.pg.query(
-        `INSERT INTO budget_templates (user_id, name, description, base_income, is_default)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO budget_templates (user_id, budget_id, name, description, base_income, is_default)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, name, description, base_income, is_default, created_at, updated_at`,
-        [userId, name, description || null, baseIncome || 0, isDefault || false]
+        [userId, budgetId, name, description || null, baseIncome || 0, isDefault || false]
       );
 
       const template = result.rows[0];
@@ -280,9 +359,12 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify template belongs to user
+      // Verify user has access to template and has editor or owner role
       const templateCheck = await fastify.pg.query(
-        `SELECT id FROM budget_templates WHERE id = $1 AND user_id = $2`,
+        `SELECT bu.role
+         FROM budget_templates bt
+         JOIN budget_users bu ON bu.budget_id = bt.budget_id
+         WHERE bt.id = $1 AND bu.user_id = $2`,
         [templateId, userId]
       );
 
@@ -290,6 +372,13 @@ export async function templatesRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Template not found'
+        });
+      }
+
+      if (templateCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify templates'
         });
       }
 
@@ -357,12 +446,13 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify ownership of the group
+      // Verify user has access and editor/owner role
       const groupCheck = await fastify.pg.query(
-        `SELECT tg.id
+        `SELECT tg.id, bu.role
          FROM template_groups tg
          JOIN budget_templates bt ON tg.template_id = bt.id
-         WHERE tg.id = $1 AND tg.template_id = $2 AND bt.user_id = $3`,
+         JOIN budget_users bu ON bu.budget_id = bt.budget_id
+         WHERE tg.id = $1 AND tg.template_id = $2 AND bu.user_id = $3`,
         [groupId, templateId, userId]
       );
 
@@ -370,6 +460,13 @@ export async function templatesRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Group not found'
+        });
+      }
+
+      if (groupCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify templates'
         });
       }
 
@@ -458,12 +555,13 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify template and group belong to user
+      // Verify user has access and editor/owner role
       const groupCheck = await fastify.pg.query(
-        `SELECT tg.id
+        `SELECT tg.id, bu.role
          FROM template_groups tg
          JOIN budget_templates bt ON tg.template_id = bt.id
-         WHERE tg.id = $1 AND tg.template_id = $2 AND bt.user_id = $3`,
+         JOIN budget_users bu ON bu.budget_id = bt.budget_id
+         WHERE tg.id = $1 AND tg.template_id = $2 AND bu.user_id = $3`,
         [groupId, templateId, userId]
       );
 
@@ -471,6 +569,13 @@ export async function templatesRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Group not found'
+        });
+      }
+
+      if (groupCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify templates'
         });
       }
 
@@ -543,13 +648,14 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify ownership of the item
+      // Verify user has access and editor/owner role
       const itemCheck = await fastify.pg.query(
-        `SELECT tli.id
+        `SELECT tli.id, bu.role
          FROM template_line_items tli
          JOIN template_groups tg ON tli.group_id = tg.id
          JOIN budget_templates bt ON tg.template_id = bt.id
-         WHERE tli.id = $1 AND tli.group_id = $2 AND tg.template_id = $3 AND bt.user_id = $4`,
+         JOIN budget_users bu ON bu.budget_id = bt.budget_id
+         WHERE tli.id = $1 AND tli.group_id = $2 AND tg.template_id = $3 AND bu.user_id = $4`,
         [itemId, groupId, templateId, userId]
       );
 
@@ -557,6 +663,13 @@ export async function templatesRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Line item not found'
+        });
+      }
+
+      if (itemCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify templates'
         });
       }
 
@@ -644,16 +757,18 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify ownership and delete in one query
+      // Verify user has access and editor/owner role, then delete
       const result = await fastify.pg.query(
         `DELETE FROM template_line_items tli
-         USING template_groups tg, budget_templates bt
+         USING template_groups tg, budget_templates bt, budget_users bu
          WHERE tli.id = $1
            AND tli.group_id = $2
            AND tg.id = tli.group_id
            AND tg.template_id = $3
            AND bt.id = tg.template_id
-           AND bt.user_id = $4
+           AND bu.budget_id = bt.budget_id
+           AND bu.user_id = $4
+           AND bu.role IN ('owner', 'editor')
          RETURNING tli.id`,
         [itemId, groupId, templateId, userId]
       );
@@ -693,14 +808,16 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify ownership and delete (CASCADE will handle line items)
+      // Verify user has access and editor/owner role, then delete (CASCADE will handle line items)
       const result = await fastify.pg.query(
         `DELETE FROM template_groups tg
-         USING budget_templates bt
+         USING budget_templates bt, budget_users bu
          WHERE tg.id = $1
            AND tg.template_id = $2
            AND bt.id = tg.template_id
-           AND bt.user_id = $3
+           AND bu.budget_id = bt.budget_id
+           AND bu.user_id = $3
+           AND bu.role IN ('owner', 'editor')
          RETURNING tg.id`,
         [groupId, templateId, userId]
       );
@@ -739,11 +856,15 @@ export async function templatesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Delete template (CASCADE will handle groups and line items)
+      // Verify user has access and editor/owner role, then delete template (CASCADE will handle groups and line items)
       const result = await fastify.pg.query(
-        `DELETE FROM budget_templates
-         WHERE id = $1 AND user_id = $2
-         RETURNING id`,
+        `DELETE FROM budget_templates bt
+         USING budget_users bu
+         WHERE bt.id = $1
+           AND bu.budget_id = bt.budget_id
+           AND bu.user_id = $2
+           AND bu.role IN ('owner', 'editor')
+         RETURNING bt.id`,
         [templateId, userId]
       );
 

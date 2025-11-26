@@ -8,29 +8,30 @@ import type {
   PlaidLinkMetadata,
 } from '../types/plaid';
 
-export async function createLinkToken(): Promise<LinkTokenResponse> {
+export async function createLinkToken(budgetId: string): Promise<LinkTokenResponse> {
   return apiClient<LinkTokenResponse>('/plaid/link-token', {
     method: 'POST',
-    body: {},
+    body: { budgetId },
   });
 }
 
 export async function exchangePublicToken(
   publicToken: string,
-  metadata: PlaidLinkMetadata
+  metadata: PlaidLinkMetadata,
+  budgetId: string
 ): Promise<ExchangeTokenResponse> {
   return apiClient<ExchangeTokenResponse>('/plaid/exchange-token', {
     method: 'POST',
-    body: { publicToken, metadata },
+    body: { publicToken, metadata, budgetId },
   });
 }
 
-export async function getPlaidItems(): Promise<PlaidItem[]> {
-  return apiClient<PlaidItem[]>('/plaid/items');
+export async function getPlaidItems(budgetId: string): Promise<PlaidItem[]> {
+  return apiClient<PlaidItem[]>(`/plaid/items?budgetId=${budgetId}`);
 }
 
-export async function getPlaidAccounts(): Promise<PlaidAccount[]> {
-  return apiClient<PlaidAccount[]>('/plaid/accounts');
+export async function getPlaidAccounts(budgetId: string): Promise<PlaidAccount[]> {
+  return apiClient<PlaidAccount[]>(`/plaid/accounts?budgetId=${budgetId}`);
 }
 
 export async function updateAccountMapping(
@@ -43,10 +44,10 @@ export async function updateAccountMapping(
   });
 }
 
-export async function syncTransactions(): Promise<SyncResult> {
+export async function syncTransactions(budgetId: string): Promise<SyncResult> {
   return apiClient<SyncResult>('/plaid/sync', {
     method: 'POST',
-    body: {},
+    body: { budgetId },
   });
 }
 

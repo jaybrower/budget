@@ -1,33 +1,4 @@
-import crypto from 'crypto';
-import { config } from '../config.js';
-
-const ALGORITHM = 'aes-256-gcm';
-
-function encrypt(text, encryptionKey) {
-  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag();
-
-  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-}
-
-function decrypt(encryptedText, encryptionKey) {
-  const [ivHex, authTagHex, encrypted] = encryptedText.split(':');
-  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
-
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
-
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
+import { encrypt, decrypt } from '../utils/encrypt-secret.js';
 
 export async function plaidRoutes(fastify) {
   const authenticate = async (request, reply) => fastify.authenticate(request, reply);
@@ -35,11 +6,41 @@ export async function plaidRoutes(fastify) {
 
   // Create link token for Plaid Link initialization
   fastify.post('/link-token', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.body;
 
     try {
+      // Verify user has access to budget and has editor/owner role
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      if (budgetCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot link accounts'
+        });
+      }
+
       const response = await fastify.plaid.linkTokenCreate({
         user: { client_user_id: userId },
         client_name: 'Budget App',
@@ -64,18 +65,39 @@ export async function plaidRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['publicToken', 'metadata'],
+        required: ['publicToken', 'metadata', 'budgetId'],
         properties: {
           publicToken: { type: 'string' },
-          metadata: { type: 'object' }
+          metadata: { type: 'object' },
+          budgetId: { type: 'string', format: 'uuid' }
         }
       }
     }
   }, async (request, reply) => {
     const userId = request.user.userId;
-    const { publicToken, metadata } = request.body;
+    const { publicToken, metadata, budgetId } = request.body;
 
     try {
+      // Verify user has access to budget and has editor/owner role
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      if (budgetCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot link accounts'
+        });
+      }
+
       // Exchange public token for access token
       const exchangeResponse = await fastify.plaid.itemPublicTokenExchange({
         public_token: publicToken,
@@ -93,10 +115,10 @@ export async function plaidRoutes(fastify) {
 
       // Insert plaid_item
       const itemResult = await fastify.pg.query(
-        `INSERT INTO plaid_items (user_id, access_token, item_id, institution_id, institution_name)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO plaid_items (user_id, budget_id, access_token, item_id, institution_id, institution_name)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [userId, encryptedAccessToken, itemId, institutionId, institutionName]
+        [userId, budgetId, encryptedAccessToken, itemId, institutionId, institutionName]
       );
 
       const plaidItemId = itemResult.rows[0].id;
@@ -137,13 +159,36 @@ export async function plaidRoutes(fastify) {
     }
   });
 
-  // Get all linked institutions for the user
+  // Get all linked institutions for the budget
   fastify.get('/items', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
 
     try {
+      // Verify user has access to budget
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
         `SELECT
           pi.id, pi.institution_id, pi.institution_name, pi.last_synced_at, pi.is_active, pi.created_at,
@@ -162,10 +207,10 @@ export async function plaidRoutes(fastify) {
           ) FILTER (WHERE pa.id IS NOT NULL) as accounts
          FROM plaid_items pi
          LEFT JOIN plaid_accounts pa ON pa.plaid_item_id = pi.id
-         WHERE pi.user_id = $1 AND pi.is_active = true
+         WHERE pi.budget_id = $1 AND pi.is_active = true
          GROUP BY pi.id
          ORDER BY pi.created_at DESC`,
-        [userId]
+        [budgetId]
       );
 
       return reply.send(result.rows.map(item => ({
@@ -203,9 +248,12 @@ export async function plaidRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify item belongs to user and get access token
+      // Verify item belongs to a budget user has access to and has editor/owner role
       const itemResult = await fastify.pg.query(
-        `SELECT id, access_token FROM plaid_items WHERE id = $1 AND user_id = $2`,
+        `SELECT pi.id, pi.access_token, bu.role
+         FROM plaid_items pi
+         JOIN budget_users bu ON bu.budget_id = pi.budget_id
+         WHERE pi.id = $1 AND bu.user_id = $2`,
         [itemId, userId]
       );
 
@@ -213,6 +261,13 @@ export async function plaidRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Item not found'
+        });
+      }
+
+      if (itemResult.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot unlink accounts'
         });
       }
 
@@ -252,11 +307,34 @@ export async function plaidRoutes(fastify) {
 
   // Get all linked accounts
   fastify.get('/accounts', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
 
     try {
+      // Verify user has access to budget
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
         `SELECT
           pa.id, pa.account_id, pa.name, pa.official_name, pa.type, pa.subtype,
@@ -264,9 +342,9 @@ export async function plaidRoutes(fastify) {
           pi.institution_name
          FROM plaid_accounts pa
          JOIN plaid_items pi ON pi.id = pa.plaid_item_id
-         WHERE pi.user_id = $1 AND pi.is_active = true AND pa.is_active = true
+         WHERE pi.budget_id = $1 AND pi.is_active = true AND pa.is_active = true
          ORDER BY pi.institution_name, pa.name`,
-        [userId]
+        [budgetId]
       );
 
       return reply.send(result.rows.map(account => ({
@@ -315,12 +393,13 @@ export async function plaidRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify account belongs to user
+      // Verify account belongs to a budget user has access to and has editor/owner role
       const accountCheck = await fastify.pg.query(
-        `SELECT pa.id
+        `SELECT pa.id, bu.role
          FROM plaid_accounts pa
          JOIN plaid_items pi ON pi.id = pa.plaid_item_id
-         WHERE pa.id = $1 AND pi.user_id = $2`,
+         JOIN budget_users bu ON bu.budget_id = pi.budget_id
+         WHERE pa.id = $1 AND bu.user_id = $2`,
         [accountId, userId]
       );
 
@@ -328,6 +407,13 @@ export async function plaidRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Account not found'
+        });
+      }
+
+      if (accountCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot update account mappings'
         });
       }
 
@@ -348,15 +434,45 @@ export async function plaidRoutes(fastify) {
 
   // Sync transactions from all linked accounts
   fastify.post('/sync', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.body;
 
     try {
-      // Get all active items for user
+      // Verify user has access to budget and has editor/owner role
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      if (budgetCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot sync transactions'
+        });
+      }
+
+      // Get all active items for budget
       const itemsResult = await fastify.pg.query(
-        `SELECT id, access_token, cursor FROM plaid_items WHERE user_id = $1 AND is_active = true`,
-        [userId]
+        `SELECT id, access_token, cursor, budget_id FROM plaid_items WHERE budget_id = $1 AND is_active = true`,
+        [budgetId]
       );
 
       let totalAdded = 0;
@@ -401,11 +517,12 @@ export async function plaidRoutes(fastify) {
             if (existingCheck.rows.length === 0) {
               await fastify.pg.query(
                 `INSERT INTO purchases (
-                  user_id, amount, description, merchant, payment_method,
+                  user_id, budget_id, amount, description, merchant, payment_method,
                   purchase_date, plaid_transaction_id, plaid_account_id, reference_number
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
                 [
                   userId,
+                  item.budget_id,
                   Math.abs(transaction.amount),
                   transaction.name,
                   transaction.merchant_name || transaction.name,

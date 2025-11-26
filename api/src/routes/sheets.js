@@ -24,9 +24,12 @@ export async function sheetsRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify template belongs to user
+      // Verify user has access to template and get budget_id
       const templateCheck = await fastify.pg.query(
-        `SELECT id FROM budget_templates WHERE id = $1 AND user_id = $2`,
+        `SELECT bt.id, bt.budget_id, bu.role
+         FROM budget_templates bt
+         JOIN budget_users bu ON bu.budget_id = bt.budget_id
+         WHERE bt.id = $1 AND bu.user_id = $2`,
         [templateId, userId]
       );
 
@@ -37,10 +40,19 @@ export async function sheetsRoutes(fastify) {
         });
       }
 
-      // Check if a sheet already exists for this user/year/month
+      if (templateCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot create budget sheets'
+        });
+      }
+
+      const budgetId = templateCheck.rows[0].budget_id;
+
+      // Check if a sheet already exists for this budget/year/month
       const existingCheck = await fastify.pg.query(
-        `SELECT id FROM budget_sheets WHERE user_id = $1 AND year = $2 AND month = $3`,
-        [userId, year, month]
+        `SELECT id FROM budget_sheets WHERE budget_id = $1 AND year = $2 AND month = $3`,
+        [budgetId, year, month]
       );
 
       if (existingCheck.rows.length > 0) {
@@ -81,17 +93,40 @@ export async function sheetsRoutes(fastify) {
 
   // Get current month's budget sheet
   fastify.get('/current', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1; // JavaScript months are 0-indexed
 
     try {
+      // Verify user has access to budget
+      const accessCheck = await fastify.pg.query(
+        `SELECT 1 FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (accessCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
-        `SELECT id FROM budget_sheets WHERE user_id = $1 AND year = $2 AND month = $3`,
-        [userId, year, month]
+        `SELECT id FROM budget_sheets WHERE budget_id = $1 AND year = $2 AND month = $3`,
+        [budgetId, year, month]
       );
 
       if (result.rows.length === 0) {
@@ -123,16 +158,37 @@ export async function sheetsRoutes(fastify) {
           year: { type: 'integer', minimum: 2000, maximum: 2100 },
           month: { type: 'integer', minimum: 1, maximum: 12 }
         }
+      },
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
       }
     }
   }, async (request, reply) => {
     const { year, month } = request.params;
+    const { budgetId } = request.query;
     const userId = request.user.userId;
 
     try {
+      // Verify user has access to budget
+      const accessCheck = await fastify.pg.query(
+        `SELECT 1 FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (accessCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
-        `SELECT id FROM budget_sheets WHERE user_id = $1 AND year = $2 AND month = $3`,
-        [userId, year, month]
+        `SELECT id FROM budget_sheets WHERE budget_id = $1 AND year = $2 AND month = $3`,
+        [budgetId, year, month]
       );
 
       if (result.rows.length === 0) {
@@ -213,9 +269,12 @@ export async function sheetsRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify sheet belongs to user
+      // Verify user has access and editor/owner role
       const sheetCheck = await fastify.pg.query(
-        `SELECT id, is_finalized FROM budget_sheets WHERE id = $1 AND user_id = $2`,
+        `SELECT bs.id, bs.is_finalized, bu.role
+         FROM budget_sheets bs
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE bs.id = $1 AND bu.user_id = $2`,
         [sheetId, userId]
       );
 
@@ -223,6 +282,13 @@ export async function sheetsRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Budget sheet not found'
+        });
+      }
+
+      if (sheetCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify budget sheets'
         });
       }
 
@@ -273,7 +339,7 @@ export async function sheetsRoutes(fastify) {
     }
   });
 
-  // List all budget sheets for user
+  // List all budget sheets for budgets user has access to
   fastify.get('/', {
     preHandler: [authenticate]
   }, async (request, reply) => {
@@ -288,7 +354,8 @@ export async function sheetsRoutes(fastify) {
           bst.total_budgeted, bst.total_actual, bst.budgeted_remaining, bst.actual_remaining
          FROM budget_sheets bs
          LEFT JOIN budget_sheet_totals bst ON bst.sheet_id = bs.id
-         WHERE bs.user_id = $1
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE bu.user_id = $1
          ORDER BY bs.year DESC, bs.month DESC`,
         [userId]
       );
@@ -346,7 +413,8 @@ export async function sheetsRoutes(fastify) {
           bs.synced_at >= bt.updated_at as is_synced
          FROM budget_sheets bs
          LEFT JOIN budget_templates bt ON bt.id = bs.template_id
-         WHERE bs.id = $1 AND bs.user_id = $2`,
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE bs.id = $1 AND bu.user_id = $2`,
         [sheetId, userId]
       );
 
@@ -406,9 +474,12 @@ export async function sheetsRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify sheet belongs to user and has a template
+      // Verify user has access and editor/owner role
       const sheetCheck = await fastify.pg.query(
-        `SELECT id, template_id, is_finalized FROM budget_sheets WHERE id = $1 AND user_id = $2`,
+        `SELECT bs.id, bs.template_id, bs.is_finalized, bu.role
+         FROM budget_sheets bs
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE bs.id = $1 AND bu.user_id = $2`,
         [sheetId, userId]
       );
 
@@ -420,6 +491,13 @@ export async function sheetsRoutes(fastify) {
       }
 
       const sheet = sheetCheck.rows[0];
+
+      if (sheet.role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot sync budget sheets'
+        });
+      }
 
       if (!sheet.template_id) {
         return reply.status(400).send({
@@ -483,7 +561,8 @@ async function getSheetWithDetails(fastify, sheetId, userId) {
       bst.budgeted_remaining, bst.actual_remaining
      FROM budget_sheets bs
      LEFT JOIN budget_sheet_totals bst ON bst.sheet_id = bs.id
-     WHERE bs.id = $1 AND bs.user_id = $2`,
+     JOIN budget_users bu ON bu.budget_id = bs.budget_id
+     WHERE bs.id = $1 AND bu.user_id = $2`,
     [sheetId, userId]
   );
 

@@ -2,6 +2,15 @@
 
 A Fastify-based REST API for the budget application with PostgreSQL database and JWT authentication.
 
+## Features
+
+- **User Authentication**: Secure registration and login with JWT tokens
+- **Shared Budgets**: Create and share budgets with multiple users using role-based access control (owner, editor, viewer)
+- **Budget Templates**: Create reusable templates with customizable groups and line items
+- **Budget Sheets**: Generate monthly budget sheets from templates with rollover support
+- **Purchase Tracking**: Track purchases and link them to budget line items
+- **Plaid Integration**: Connect bank accounts and automatically sync transactions
+
 ## Project Structure
 
 ```
@@ -18,6 +27,7 @@ api/
     │   └── plaid.js      # Plaid API client
     ├── routes/
     │   ├── users.js      # User registration, login, profile
+    │   ├── budgets.js    # Budget management and sharing
     │   ├── templates.js  # Budget template management
     │   ├── sheets.js     # Budget sheet management
     │   ├── purchases.js  # Purchase tracking and linking
@@ -28,6 +38,8 @@ api/
 
 ## API Endpoints
 
+**Note on Budget Context**: Most endpoints now require a budget context. Templates, sheets, and Plaid integrations are scoped to specific budgets. Users must have appropriate access (owner, editor, or viewer role) to the budget to access these resources.
+
 ### Users
 
 | Method | Endpoint | Description | Auth |
@@ -36,13 +48,31 @@ api/
 | POST | `/api/users/login` | Login, get JWT | No |
 | GET | `/api/users/me` | Get profile | Yes |
 
+### Budgets
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| GET | `/api/budgets` | Get all budgets user has access to | Yes |
+| POST | `/api/budgets` | Create a new budget | Yes |
+| PATCH | `/api/budgets/:budgetId` | Update budget name (owner only) | Yes |
+| GET | `/api/budgets/:budgetId/members` | Get budget members | Yes |
+| PATCH | `/api/budgets/:budgetId/members/:userId/role` | Update member role (owner only) | Yes |
+| DELETE | `/api/budgets/:budgetId/members/:userId` | Remove member (owner or self) | Yes |
+| POST | `/api/budgets/:budgetId/invitations` | Invite user to budget (owner/editor) | Yes |
+| GET | `/api/budgets/:budgetId/invitations` | Get sent invitations | Yes |
+| DELETE | `/api/budgets/:budgetId/invitations/:invitationId` | Cancel invitation (owner/editor) | Yes |
+| GET | `/api/budgets/invitations/received` | Get invitations for current user | Yes |
+| POST | `/api/budgets/invitations/:token/accept` | Accept invitation | Yes |
+| POST | `/api/budgets/invitations/:token/decline` | Decline invitation | Yes |
+
 ### Budget Templates
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/api/templates` | Get all templates | Yes |
+| GET | `/api/templates?budgetId={uuid}` | Get templates for a specific budget | Yes |
 | GET | `/api/templates?id={uuid}` | Get template with groups and items | Yes |
-| GET | `/api/templates/default` | Get user's default template with groups and items | Yes |
+| GET | `/api/templates/default?budgetId={uuid}` | Get default template for budget | Yes |
 | POST | `/api/templates` | Create new template | Yes |
 | POST | `/api/templates/:templateId/groups` | Add group to template | Yes |
 | PUT | `/api/templates/:templateId/groups/:groupId` | Update group | Yes |
@@ -56,9 +86,9 @@ api/
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| GET | `/api/sheets` | List all budget sheets | Yes |
-| GET | `/api/sheets/current` | Get current month's budget | Yes |
-| GET | `/api/sheets/:year/:month` | Get budget by year/month | Yes |
+| GET | `/api/sheets?budgetId={uuid}` | List all budget sheets for a budget | Yes |
+| GET | `/api/sheets/current?budgetId={uuid}` | Get current month's budget | Yes |
+| GET | `/api/sheets/:year/:month?budgetId={uuid}` | Get budget by year/month | Yes |
 | GET | `/api/sheets/:sheetId` | Get budget by ID | Yes |
 | POST | `/api/sheets` | Create budget from template | Yes |
 | PATCH | `/api/sheets/:sheetId` | Update budget sheet | Yes |
@@ -79,13 +109,13 @@ api/
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| POST | `/api/plaid/link-token` | Create link token for Plaid Link | Yes |
-| POST | `/api/plaid/exchange-token` | Exchange public token after linking | Yes |
-| GET | `/api/plaid/items` | Get all linked institutions | Yes |
+| POST | `/api/plaid/link-token` | Create link token for Plaid Link (requires budgetId in body) | Yes |
+| POST | `/api/plaid/exchange-token` | Exchange public token after linking (requires budgetId in body) | Yes |
+| GET | `/api/plaid/items?budgetId={uuid}` | Get all linked institutions for a budget | Yes |
 | DELETE | `/api/plaid/items/:itemId` | Unlink an institution | Yes |
-| GET | `/api/plaid/accounts` | Get all linked accounts | Yes |
+| GET | `/api/plaid/accounts?budgetId={uuid}` | Get all linked accounts for a budget | Yes |
 | PATCH | `/api/plaid/accounts/:accountId` | Update account payment method | Yes |
-| POST | `/api/plaid/sync` | Sync transactions from Plaid | Yes |
+| POST | `/api/plaid/sync?budgetId={uuid}` | Sync transactions from Plaid for a budget | Yes |
 | POST | `/api/plaid/webhook` | Handle Plaid webhooks | No |
 
 ### Health
@@ -120,7 +150,7 @@ cp .env.example .env
 | `DATABASE_USER` | Database user | `postgres` |
 | `DATABASE_PASSWORD` | Plain text password (local dev) | - |
 | `DATABASE_PASSWORD_ENCRYPTED` | Encrypted password (production) | - |
-| `ENCRYPTION_KEY` | Key to decrypt password | - |
+| `ENCRYPTION_KEY` | Key to decrypt passwords and secrets | - |
 | `JWT_SECRET` | Secret for signing JWTs | - |
 | `JWT_EXPIRES_IN` | Token expiration | `24h` |
 | `PLAID_CLIENT_ID_ENCRYPTED` | Encrypted Plaid client ID | - |
@@ -128,17 +158,24 @@ cp .env.example .env
 | `PLAID_ENV` | Plaid environment | `sandbox` |
 | `PLAID_PRODUCTS` | Plaid products (comma-separated) | `transactions` |
 | `PLAID_COUNTRY_CODES` | Country codes (comma-separated) | `US` |
+| `RECAPTCHA_SECRET_KEY` | Encrypted reCAPTCHA secret key | - |
 
-### Password Encryption for Production
+### Secret Encryption for Production
 
-For non-local environments, encrypt your database password to avoid storing plain text in configuration:
+For non-local environments, encrypt sensitive values (database password, Plaid credentials, reCAPTCHA secret) to avoid storing plain text in configuration:
 
 ```bash
 npm run encrypt-secret
-# Enter your password and encryption key
-# Copy the output to DATABASE_PASSWORD_ENCRYPTED in .env
+# Enter your secret value and encryption key when prompted
+# Copy the output to the appropriate *_ENCRYPTED variable in .env
 # Set ENCRYPTION_KEY in your deployment environment
 ```
+
+Encrypted variables:
+- `DATABASE_PASSWORD_ENCRYPTED` - Database password
+- `PLAID_CLIENT_ID_ENCRYPTED` - Plaid client ID
+- `PLAID_SECRET_ENCRYPTED` - Plaid secret key
+- `RECAPTCHA_SECRET_KEY` - reCAPTCHA secret key
 
 ## Running the Server
 
@@ -223,6 +260,312 @@ Response:
 }
 ```
 
+## Shared Budgets
+
+The budget application supports sharing budgets with multiple users through a role-based access control system.
+
+### Roles
+
+- **Owner**: Full control over the budget, can manage members and settings
+- **Editor**: Can create and modify budget data, invite other users
+- **Viewer**: Read-only access to budget data
+
+### Get All Budgets
+
+```bash
+curl http://localhost:3000/api/budgets \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Response:
+```json
+{
+  "budgets": [
+    {
+      "id": "uuid",
+      "name": "Family Budget",
+      "createdBy": "uuid",
+      "role": "owner",
+      "isOwner": true,
+      "joinedAt": "2024-01-01T00:00:00.000Z",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "uuid",
+      "name": "Shared Household",
+      "createdBy": "different-uuid",
+      "role": "editor",
+      "isOwner": false,
+      "joinedAt": "2024-01-15T00:00:00.000Z",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Create a Budget
+
+```bash
+curl -X POST http://localhost:3000/api/budgets \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "name": "Family Budget"
+  }'
+```
+
+Response:
+```json
+{
+  "id": "uuid",
+  "name": "Family Budget",
+  "createdBy": "uuid",
+  "role": "owner",
+  "isOwner": true,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### Update Budget Name
+
+```bash
+curl -X PATCH http://localhost:3000/api/budgets/<budget-id> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "name": "Updated Budget Name"
+  }'
+```
+
+Only budget owners can update the budget name.
+
+Response:
+```json
+{
+  "id": "uuid",
+  "name": "Updated Budget Name",
+  "createdBy": "uuid",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### Get Budget Members
+
+```bash
+curl http://localhost:3000/api/budgets/<budget-id>/members \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Response:
+```json
+{
+  "members": [
+    {
+      "userId": "uuid",
+      "email": "owner@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "role": "owner",
+      "joinedAt": "2024-01-01T00:00:00.000Z",
+      "invitedBy": null
+    },
+    {
+      "userId": "uuid",
+      "email": "editor@example.com",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "role": "editor",
+      "joinedAt": "2024-01-15T00:00:00.000Z",
+      "invitedBy": {
+        "userId": "uuid",
+        "email": "owner@example.com",
+        "firstName": "John",
+        "lastName": "Doe"
+      }
+    }
+  ]
+}
+```
+
+### Update Member Role
+
+```bash
+curl -X PATCH http://localhost:3000/api/budgets/<budget-id>/members/<user-id>/role \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "role": "viewer"
+  }'
+```
+
+Only budget owners can update member roles. Cannot remove owner role if you are the only owner.
+
+Response:
+```json
+{
+  "userId": "uuid",
+  "role": "viewer",
+  "joinedAt": "2024-01-15T00:00:00.000Z"
+}
+```
+
+### Remove Member from Budget
+
+```bash
+curl -X DELETE http://localhost:3000/api/budgets/<budget-id>/members/<user-id> \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Only budget owners can remove other members. Members can remove themselves. Cannot leave if you are the only owner.
+
+Response: Returns 204 No Content on success.
+
+### Invite User to Budget
+
+```bash
+curl -X POST http://localhost:3000/api/budgets/<budget-id>/invitations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "email": "newuser@example.com",
+    "role": "editor"
+  }'
+```
+
+Owners and editors can invite users. The `role` field is optional and defaults to "editor". Valid roles are "editor" and "viewer" (cannot invite as "owner").
+
+Response:
+```json
+{
+  "id": "uuid",
+  "budgetId": "uuid",
+  "email": "newuser@example.com",
+  "role": "editor",
+  "invitedBy": "uuid",
+  "token": "uuid",
+  "status": "pending",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "expiresAt": "2024-01-08T00:00:00.000Z"
+}
+```
+
+### Get Sent Invitations
+
+```bash
+curl http://localhost:3000/api/budgets/<budget-id>/invitations \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Returns all pending invitations for the budget.
+
+Response:
+```json
+{
+  "invitations": [
+    {
+      "id": "uuid",
+      "budgetId": "uuid",
+      "email": "newuser@example.com",
+      "role": "editor",
+      "token": "uuid",
+      "status": "pending",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "expiresAt": "2024-01-08T00:00:00.000Z",
+      "respondedAt": null,
+      "invitedBy": {
+        "userId": "uuid",
+        "email": "owner@example.com",
+        "firstName": "John",
+        "lastName": "Doe"
+      }
+    }
+  ]
+}
+```
+
+### Cancel Invitation
+
+```bash
+curl -X DELETE http://localhost:3000/api/budgets/<budget-id>/invitations/<invitation-id> \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Owners and editors can cancel pending invitations.
+
+Response: Returns 204 No Content on success.
+
+### Get Received Invitations
+
+```bash
+curl http://localhost:3000/api/budgets/invitations/received \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Gets all pending invitations sent to the current user's email address.
+
+Response:
+```json
+{
+  "invitations": [
+    {
+      "id": "uuid",
+      "budgetId": "uuid",
+      "budgetName": "Family Budget",
+      "email": "user@example.com",
+      "role": "editor",
+      "token": "uuid",
+      "status": "pending",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "expiresAt": "2024-01-08T00:00:00.000Z",
+      "invitedBy": {
+        "email": "owner@example.com",
+        "firstName": "John",
+        "lastName": "Doe"
+      }
+    }
+  ]
+}
+```
+
+### Accept Invitation
+
+```bash
+curl -X POST http://localhost:3000/api/budgets/invitations/<token>/accept \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Accepts an invitation using the token. The invitation must be sent to the current user's email address.
+
+Response:
+```json
+{
+  "budgetId": "uuid",
+  "budgetName": "Family Budget",
+  "role": "editor",
+  "message": "Invitation accepted successfully"
+}
+```
+
+### Decline Invitation
+
+```bash
+curl -X POST http://localhost:3000/api/budgets/invitations/<token>/decline \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
+Declines an invitation using the token.
+
+Response:
+```json
+{
+  "message": "Invitation declined"
+}
+```
+
 ### Create a Budget Template
 
 ```bash
@@ -233,7 +576,8 @@ curl -X POST http://localhost:3000/api/templates \
     "name": "Monthly Budget",
     "description": "Standard monthly budget template",
     "baseIncome": 5000,
-    "isDefault": true
+    "isDefault": true,
+    "budgetId": "<budget-id>"
   }'
 ```
 
@@ -402,11 +746,11 @@ Response:
 ### Get Default Template
 
 ```bash
-curl http://localhost:3000/api/templates/default \
+curl "http://localhost:3000/api/templates/default?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
-Response: Returns the user's default template with all groups and line items (same structure as "Get Template with All Groups and Items"). Returns 404 if no default template is set.
+Response: Returns the default template for the specified budget with all groups and line items (same structure as "Get Template with All Groups and Items"). Returns 404 if no default template is set.
 
 ### Delete a Template
 
@@ -489,7 +833,7 @@ Response:
 ### Get Current Month's Budget
 
 ```bash
-curl http://localhost:3000/api/sheets/current \
+curl "http://localhost:3000/api/sheets/current?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
@@ -498,7 +842,7 @@ Response: Returns the full budget sheet with groups and line items (same structu
 ### Get Budget for Specific Month
 
 ```bash
-curl http://localhost:3000/api/sheets/2025/11 \
+curl "http://localhost:3000/api/sheets/2025/11?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
@@ -522,7 +866,7 @@ Response: Returns the full budget sheet with groups and line items (same structu
 ### List All Budget Sheets
 
 ```bash
-curl http://localhost:3000/api/sheets \
+curl "http://localhost:3000/api/sheets?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
@@ -755,10 +1099,14 @@ Response:
 
 ```bash
 curl -X POST http://localhost:3000/api/plaid/link-token \
-  -H "Authorization: Bearer <your-jwt-token>"
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "budgetId": "<budget-id>"
+  }'
 ```
 
-This creates a link token to initialize Plaid Link in the frontend.
+This creates a link token to initialize Plaid Link in the frontend. Requires editor or owner role in the specified budget.
 
 Response:
 ```json
@@ -775,6 +1123,7 @@ curl -X POST http://localhost:3000/api/plaid/exchange-token \
   -H "Authorization: Bearer <your-jwt-token>" \
   -d '{
     "publicToken": "public-sandbox-...",
+    "budgetId": "<budget-id>",
     "metadata": {
       "institution": {
         "institution_id": "ins_123",
@@ -798,7 +1147,7 @@ Response:
 ### Get Linked Institutions
 
 ```bash
-curl http://localhost:3000/api/plaid/items \
+curl "http://localhost:3000/api/plaid/items?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
@@ -848,7 +1197,7 @@ Response:
 ### Get All Linked Accounts
 
 ```bash
-curl http://localhost:3000/api/plaid/accounts \
+curl "http://localhost:3000/api/plaid/accounts?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
@@ -893,11 +1242,11 @@ Response:
 ### Sync Transactions
 
 ```bash
-curl -X POST http://localhost:3000/api/plaid/sync \
+curl -X POST "http://localhost:3000/api/plaid/sync?budgetId=<budget-id>" \
   -H "Authorization: Bearer <your-jwt-token>"
 ```
 
-Fetches new transactions from all linked Plaid accounts and creates purchases for them. Uses Plaid's sync API to efficiently get only new/modified/removed transactions since the last sync.
+Fetches new transactions from all linked Plaid accounts for the specified budget and creates purchases for them. Uses Plaid's sync API to efficiently get only new/modified/removed transactions since the last sync.
 
 Response:
 ```json

@@ -13,7 +13,9 @@
       "Bash(cat:*)",
       "Bash(xargs cat:*)",
       "Bash(git -C /c/code/budget log --oneline --all -20)",
-      "Bash(git -C /c/code/budget diff HEAD ui/src/api/client.ts)"
+      "Bash(git -C /c/code/budget diff HEAD ui/src/api/client.ts)",
+      "Bash(npm install:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

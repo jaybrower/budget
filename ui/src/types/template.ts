@@ -42,6 +42,7 @@ export interface TemplateListItem {
 
 export interface CreateTemplateRequest {
   name: string;
+  budgetId: string;
   description?: string;
   baseIncome: number;
   isDefault?: boolean;

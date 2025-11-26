@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
+import { useBudget } from '../contexts/BudgetContext';
 import { getSheetByDate, createSheet, getSyncStatus, syncSheet, updateSheet } from '../api/sheets';
 import { getTemplates } from '../api/templates';
 import { getPurchasesForLineItem, unlinkPurchase } from '../api/purchases';
@@ -10,6 +11,7 @@ import type { Purchase } from '../types/purchase';
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { currentBudget } = useBudget();
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -25,10 +27,14 @@ export function Dashboard() {
   const isCurrentMonth = selectedYear === now.getFullYear() && selectedMonth === now.getMonth() + 1;
 
   useEffect(() => {
-    loadData();
-  }, [selectedYear, selectedMonth]);
+    if (currentBudget) {
+      loadData();
+    }
+  }, [selectedYear, selectedMonth, currentBudget]);
 
   async function loadData() {
+    if (!currentBudget) return;
+
     setIsLoading(true);
     setError(null);
     setNotFound(false);
@@ -36,7 +42,7 @@ export function Dashboard() {
     setSyncStatus(null);
 
     try {
-      const sheetData = await getSheetByDate(selectedYear, selectedMonth);
+      const sheetData = await getSheetByDate(selectedYear, selectedMonth, currentBudget.id);
       setSheet(sheetData);
 
       // Check sync status if sheet has a template
@@ -296,7 +302,8 @@ function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: 
       // Reload the sheet to update actual amounts
       const updatedSheet = await getSheetByDate(
         new Date(sheet.year, sheet.month - 1).getFullYear(),
-        sheet.month
+        sheet.month,
+        currentBudget!.id
       );
       onSheetUpdate(updatedSheet);
     } catch (err) {

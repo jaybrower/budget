@@ -13,6 +13,7 @@ export interface Purchase {
 
 export interface CreatePurchaseRequest {
   amount: number;
+  budgetId: string;
   purchaseDate: string;
   description?: string;
   paymentMethod?: string;

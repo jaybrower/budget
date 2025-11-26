@@ -4,6 +4,7 @@ import postgresPlugin from './plugins/postgres.js';
 import jwtPlugin from './plugins/jwt.js';
 import plaidPlugin from './plugins/plaid.js';
 import { usersRoutes } from './routes/users.js';
+import { budgetsRoutes } from './routes/budgets.js';
 import { templatesRoutes } from './routes/templates.js';
 import { sheetsRoutes } from './routes/sheets.js';
 import { purchasesRoutes } from './routes/purchases.js';
@@ -20,6 +21,7 @@ await fastify.register(plaidPlugin);
 
 // Register routes
 await fastify.register(usersRoutes, { prefix: '/api/users' });
+await fastify.register(budgetsRoutes, { prefix: '/api/budgets' });
 await fastify.register(templatesRoutes, { prefix: '/api/templates' });
 await fastify.register(sheetsRoutes, { prefix: '/api/sheets' });
 await fastify.register(purchasesRoutes, { prefix: '/api/purchases' });

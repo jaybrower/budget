@@ -13,12 +13,12 @@ export async function getSheets(): Promise<BudgetSheetListItem[]> {
   return apiClient<BudgetSheetListItem[]>('/sheets');
 }
 
-export async function getCurrentSheet(): Promise<BudgetSheet> {
-  return apiClient<BudgetSheet>('/sheets/current');
+export async function getCurrentSheet(budgetId: string): Promise<BudgetSheet> {
+  return apiClient<BudgetSheet>(`/sheets/current?budgetId=${budgetId}`);
 }
 
-export async function getSheetByDate(year: number, month: number): Promise<BudgetSheet> {
-  return apiClient<BudgetSheet>(`/sheets/${year}/${month}`);
+export async function getSheetByDate(year: number, month: number, budgetId: string): Promise<BudgetSheet> {
+  return apiClient<BudgetSheet>(`/sheets/${year}/${month}?budgetId=${budgetId}`);
 }
 
 export async function getSheetById(sheetId: string): Promise<BudgetSheet> {

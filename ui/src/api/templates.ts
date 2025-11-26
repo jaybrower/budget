@@ -9,16 +9,16 @@ import type {
   LineItem,
 } from '../types/template';
 
-export async function getTemplates(): Promise<TemplateListItem[]> {
-  return apiClient<TemplateListItem[]>('/templates');
+export async function getTemplates(budgetId: string): Promise<TemplateListItem[]> {
+  return apiClient<TemplateListItem[]>(`/templates?budgetId=${budgetId}`);
 }
 
 export async function getTemplate(id: string): Promise<Template> {
   return apiClient<Template>(`/templates?id=${id}`);
 }
 
-export async function getDefaultTemplate(): Promise<Template> {
-  return apiClient<Template>('/templates/default');
+export async function getDefaultTemplate(budgetId: string): Promise<Template> {
+  return apiClient<Template>(`/templates/default?budgetId=${budgetId}`);
 }
 
 export async function createTemplate(data: CreateTemplateRequest): Promise<Template> {

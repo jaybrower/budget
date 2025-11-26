@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
+import { useBudget } from '../contexts/BudgetContext';
 import { getCurrentSheet } from '../api/sheets';
 import {
   createPurchase,
@@ -16,6 +17,7 @@ interface LineItemOption {
 }
 
 export function Purchases() {
+  const { currentBudget } = useBudget();
   const [currentSheet, setCurrentSheet] = useState<BudgetSheet | null>(null);
   const [unassociatedPurchases, setUnassociatedPurchases] = useState<Purchase[]>([]);
   const [lineItemOptions, setLineItemOptions] = useState<LineItemOption[]>([]);
@@ -39,21 +41,25 @@ export function Purchases() {
   const [linkLineItemId, setLinkLineItemId] = useState('');
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentBudget) {
+      loadData();
+    }
+  }, [currentBudget]);
 
   async function loadData() {
+    if (!currentBudget) return;
+
     try {
       setIsLoading(true);
       setError(null);
 
       // Load unassociated purchases
-      const purchases = await getUnassociatedPurchases();
+      const purchases = await getUnassociatedPurchases(currentBudget.id);
       setUnassociatedPurchases(purchases);
 
       // Try to load current budget sheet for line items
       try {
-        const sheet = await getCurrentSheet();
+        const sheet = await getCurrentSheet(currentBudget.id);
         setCurrentSheet(sheet);
 
         // Extract line items from the sheet
@@ -100,6 +106,7 @@ export function Purchases() {
 
       const request: CreatePurchaseRequest = {
         amount: parsedAmount,
+        budgetId: currentBudget!.id,
         purchaseDate,
       };
 

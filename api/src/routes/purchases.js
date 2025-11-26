@@ -8,9 +8,10 @@ export async function purchasesRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['amount', 'purchaseDate'],
+        required: ['amount', 'purchaseDate', 'budgetId'],
         properties: {
           amount: { type: 'number' },
+          budgetId: { type: 'string', format: 'uuid' },
           description: { type: 'string' },
           paymentMethod: { type: 'string' },
           merchant: { type: 'string' },
@@ -24,6 +25,7 @@ export async function purchasesRoutes(fastify) {
     const userId = request.user.userId;
     const {
       amount,
+      budgetId,
       description,
       paymentMethod,
       merchant,
@@ -33,15 +35,35 @@ export async function purchasesRoutes(fastify) {
     } = request.body;
 
     try {
-      // If lineItemId is provided, verify it belongs to the user
+      // Verify user has access to budget and editor/owner role
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
+      if (budgetCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot create purchases'
+        });
+      }
+
+      // If lineItemId is provided, verify it belongs to the same budget
       if (lineItemId) {
         const lineItemCheck = await fastify.pg.query(
           `SELECT sli.id
            FROM sheet_line_items sli
            JOIN sheet_groups sg ON sg.id = sli.group_id
            JOIN budget_sheets bs ON bs.id = sg.sheet_id
-           WHERE sli.id = $1 AND bs.user_id = $2`,
-          [lineItemId, userId]
+           WHERE sli.id = $1 AND bs.budget_id = $2`,
+          [lineItemId, budgetId]
         );
 
         if (lineItemCheck.rows.length === 0) {
@@ -55,12 +77,12 @@ export async function purchasesRoutes(fastify) {
       // Insert the new purchase
       const result = await fastify.pg.query(
         `INSERT INTO purchases (
-          user_id, line_item_id, amount, description, payment_method,
+          user_id, budget_id, line_item_id, amount, description, payment_method,
           merchant, reference_number, purchase_date
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, line_item_id, amount, description, payment_method, merchant,
                   reference_number, purchase_date, created_at, updated_at`,
-        [userId, lineItemId || null, amount, description || null, paymentMethod || null,
+        [userId, budgetId, lineItemId || null, amount, description || null, paymentMethod || null,
          merchant || null, referenceNumber || null, purchaseDate]
       );
 
@@ -86,21 +108,44 @@ export async function purchasesRoutes(fastify) {
     }
   });
 
-  // Get all unassociated purchases for the current user
+  // Get all unassociated purchases for budgets user has access to
   fastify.get('/unassociated', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
 
     try {
+      // Verify user has access to the budget
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
         `SELECT
-          id, amount, description, payment_method, merchant,
-          reference_number, purchase_date, created_at, updated_at
-         FROM purchases
-         WHERE user_id = $1 AND line_item_id IS NULL
-         ORDER BY purchase_date DESC, created_at DESC`,
-        [userId]
+          p.id, p.amount, p.description, p.payment_method, p.merchant,
+          p.reference_number, p.purchase_date, p.created_at, p.updated_at
+         FROM purchases p
+         WHERE p.budget_id = $1 AND p.line_item_id IS NULL
+         ORDER BY p.purchase_date DESC, p.created_at DESC`,
+        [budgetId]
       );
 
       return reply.send(result.rows.map(purchase => ({
@@ -140,13 +185,14 @@ export async function purchasesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify the line item belongs to the user
+      // Verify user has access to the line item
       const lineItemCheck = await fastify.pg.query(
         `SELECT sli.id
          FROM sheet_line_items sli
          JOIN sheet_groups sg ON sg.id = sli.group_id
          JOIN budget_sheets bs ON bs.id = sg.sheet_id
-         WHERE sli.id = $1 AND bs.user_id = $2`,
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE sli.id = $1 AND bu.user_id = $2`,
         [lineItemId, userId]
       );
 
@@ -212,9 +258,12 @@ export async function purchasesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify the purchase belongs to the user
+      // Verify user has access to purchase and editor/owner role
       const purchaseCheck = await fastify.pg.query(
-        `SELECT id FROM purchases WHERE id = $1 AND user_id = $2`,
+        `SELECT p.id, bu.role
+         FROM purchases p
+         JOIN budget_users bu ON bu.budget_id = p.budget_id
+         WHERE p.id = $1 AND bu.user_id = $2`,
         [purchaseId, userId]
       );
 
@@ -225,13 +274,21 @@ export async function purchasesRoutes(fastify) {
         });
       }
 
-      // Verify the line item belongs to the user
+      if (purchaseCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify purchases'
+        });
+      }
+
+      // Verify user has access to the line item
       const lineItemCheck = await fastify.pg.query(
         `SELECT sli.id
          FROM sheet_line_items sli
          JOIN sheet_groups sg ON sg.id = sli.group_id
          JOIN budget_sheets bs ON bs.id = sg.sheet_id
-         WHERE sli.id = $1 AND bs.user_id = $2`,
+         JOIN budget_users bu ON bu.budget_id = bs.budget_id
+         WHERE sli.id = $1 AND bu.user_id = $2`,
         [lineItemId, userId]
       );
 
@@ -291,9 +348,12 @@ export async function purchasesRoutes(fastify) {
     const userId = request.user.userId;
 
     try {
-      // Verify the purchase belongs to the user
+      // Verify user has access to purchase and editor/owner role
       const purchaseCheck = await fastify.pg.query(
-        `SELECT id FROM purchases WHERE id = $1 AND user_id = $2`,
+        `SELECT p.id, bu.role
+         FROM purchases p
+         JOIN budget_users bu ON bu.budget_id = p.budget_id
+         WHERE p.id = $1 AND bu.user_id = $2`,
         [purchaseId, userId]
       );
 
@@ -301,6 +361,13 @@ export async function purchasesRoutes(fastify) {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Purchase not found'
+        });
+      }
+
+      if (purchaseCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot modify purchases'
         });
       }
 
