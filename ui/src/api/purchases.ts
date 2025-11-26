@@ -12,8 +12,8 @@ export async function createPurchase(data: CreatePurchaseRequest): Promise<Purch
   });
 }
 
-export async function getUnassociatedPurchases(): Promise<Purchase[]> {
-  return apiClient<Purchase[]>('/purchases/unassociated');
+export async function getUnassociatedPurchases(budgetId: string): Promise<Purchase[]> {
+  return apiClient<Purchase[]>(`/purchases/unassociated?budgetId=${budgetId}`);
 }
 
 export async function getPurchasesForLineItem(lineItemId: string): Promise<Purchase[]> {

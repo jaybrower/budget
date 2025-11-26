@@ -9,12 +9,13 @@ export async function templatesRoutes(fastify) {
       querystring: {
         type: 'object',
         properties: {
-          id: { type: 'string', format: 'uuid' }
+          id: { type: 'string', format: 'uuid' },
+          budgetId: { type: 'string', format: 'uuid' }
         }
       }
     }
   }, async (request, reply) => {
-    const { id } = request.query;
+    const { id, budgetId } = request.query;
     const userId = request.user.userId;
 
     try {
@@ -88,6 +89,38 @@ export async function templatesRoutes(fastify) {
           updatedAt: template.updated_at,
           groups
         });
+      } else if (budgetId) {
+        // Get templates for a specific budget
+        // First verify user has access to this budget
+        const accessCheck = await fastify.pg.query(
+          `SELECT 1 FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+          [budgetId, userId]
+        );
+
+        if (accessCheck.rows.length === 0) {
+          return reply.status(404).send({
+            error: 'Not Found',
+            message: 'Budget not found'
+          });
+        }
+
+        result = await fastify.pg.query(
+          `SELECT bt.id, bt.name, bt.description, bt.base_income, bt.is_default, bt.created_at, bt.updated_at
+           FROM budget_templates bt
+           WHERE bt.budget_id = $1
+           ORDER BY bt.is_default DESC, bt.name`,
+          [budgetId]
+        );
+
+        return reply.send(result.rows.map(template => ({
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          baseIncome: template.base_income,
+          isDefault: template.is_default,
+          createdAt: template.created_at,
+          updatedAt: template.updated_at
+        })));
       } else {
         // Get all templates for budgets user has access to
         result = await fastify.pg.query(

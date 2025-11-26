@@ -54,7 +54,7 @@ export function Purchases() {
       setError(null);
 
       // Load unassociated purchases
-      const purchases = await getUnassociatedPurchases();
+      const purchases = await getUnassociatedPurchases(currentBudget.id);
       setUnassociatedPurchases(purchases);
 
       // Try to load current budget sheet for line items

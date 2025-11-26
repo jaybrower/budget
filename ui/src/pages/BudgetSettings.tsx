@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Layout } from '../components/Layout';
 import { useBudget } from '../contexts/BudgetContext';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -156,14 +157,17 @@ export function BudgetSettings() {
 
   if (!currentBudget) {
     return (
-      <div className="text-center py-12">
-        <p className="text-gray-500">No budget selected</p>
-      </div>
+      <Layout>
+        <div className="text-center py-12">
+          <p className="text-gray-500">No budget selected</p>
+        </div>
+      </Layout>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <Layout>
+      <div className="max-w-4xl mx-auto space-y-6">
       {/* Budget Name */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-semibold mb-4">Budget Settings</h2>
@@ -369,6 +373,7 @@ export function BudgetSettings() {
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </Layout>
   );
 }

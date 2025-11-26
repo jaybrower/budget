@@ -9,8 +9,8 @@ import type {
   LineItem,
 } from '../types/template';
 
-export async function getTemplates(): Promise<TemplateListItem[]> {
-  return apiClient<TemplateListItem[]>('/templates');
+export async function getTemplates(budgetId: string): Promise<TemplateListItem[]> {
+  return apiClient<TemplateListItem[]>(`/templates?budgetId=${budgetId}`);
 }
 
 export async function getTemplate(id: string): Promise<Template> {

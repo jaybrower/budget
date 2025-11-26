@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
+import { useBudget } from '../contexts/BudgetContext';
 import {
   getTemplates,
   getTemplate,
@@ -20,6 +21,7 @@ import type {
 } from '../types/template';
 
 export function Templates() {
+  const { currentBudget } = useBudget();
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [currentTemplate, setCurrentTemplate] = useState<Template | null>(null);
@@ -43,10 +45,12 @@ export function Templates() {
   const [newItemAmount, setNewItemAmount] = useState('');
   const [newItemIsRollover, setNewItemIsRollover] = useState(false);
 
-  // Load templates on mount
+  // Load templates on mount and when budget changes
   useEffect(() => {
-    loadTemplates();
-  }, []);
+    if (currentBudget) {
+      loadTemplates();
+    }
+  }, [currentBudget]);
 
   // Load selected template when selection changes
   useEffect(() => {
@@ -58,9 +62,11 @@ export function Templates() {
   }, [selectedTemplateId]);
 
   async function loadTemplates() {
+    if (!currentBudget) return;
+
     try {
       setIsLoading(true);
-      const data = await getTemplates();
+      const data = await getTemplates(currentBudget.id);
       setTemplates(data);
 
       // Select default template if exists
@@ -88,9 +94,12 @@ export function Templates() {
 
   async function handleCreateTemplate(e: React.FormEvent) {
     e.preventDefault();
+    if (!currentBudget) return;
+
     try {
       const template = await createTemplate({
         name: newTemplateName,
+        budgetId: currentBudget.id,
         baseIncome: parseFloat(newTemplateBaseIncome),
         description: newTemplateDescription || undefined,
         isDefault: newTemplateIsDefault,

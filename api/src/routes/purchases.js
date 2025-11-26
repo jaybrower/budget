@@ -110,20 +110,42 @@ export async function purchasesRoutes(fastify) {
 
   // Get all unassociated purchases for budgets user has access to
   fastify.get('/unassociated', {
-    preHandler: [authenticate]
+    preHandler: [authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['budgetId'],
+        properties: {
+          budgetId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
   }, async (request, reply) => {
     const userId = request.user.userId;
+    const { budgetId } = request.query;
 
     try {
+      // Verify user has access to the budget
+      const budgetCheck = await fastify.pg.query(
+        `SELECT role FROM budget_users WHERE budget_id = $1 AND user_id = $2`,
+        [budgetId, userId]
+      );
+
+      if (budgetCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Budget not found'
+        });
+      }
+
       const result = await fastify.pg.query(
         `SELECT
           p.id, p.amount, p.description, p.payment_method, p.merchant,
           p.reference_number, p.purchase_date, p.created_at, p.updated_at
          FROM purchases p
-         JOIN budget_users bu ON bu.budget_id = p.budget_id
-         WHERE bu.user_id = $1 AND p.line_item_id IS NULL
+         WHERE p.budget_id = $1 AND p.line_item_id IS NULL
          ORDER BY p.purchase_date DESC, p.created_at DESC`,
-        [userId]
+        [budgetId]
       );
 
       return reply.send(result.rows.map(purchase => ({
