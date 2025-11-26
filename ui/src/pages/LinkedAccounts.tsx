@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import type { PlaidLinkOnSuccessMetadata } from 'react-plaid-link';
 import { Layout } from '../components/Layout';
+import { useBudget } from '../contexts/BudgetContext';
 import {
   createLinkToken,
   exchangePublicToken,
@@ -13,14 +14,14 @@ import {
 import type { PlaidItem, SyncResult } from '../types/plaid';
 
 // Separate component for Plaid Link button to prevent multiple script initializations
-function PlaidLinkButton({ onSuccess }: { onSuccess: () => void }) {
+function PlaidLinkButton({ onSuccess, budgetId }: { onSuccess: () => void; budgetId: string }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
 
   useEffect(() => {
-    createLinkToken()
+    createLinkToken(budgetId)
       .then((data) => setLinkToken(data.linkToken))
       .catch((err) => console.error('Failed to create link token:', err));
-  }, []);
+  }, [budgetId]);
 
   const handleSuccess = async (publicToken: string, metadata: PlaidLinkOnSuccessMetadata) => {
     try {
@@ -29,7 +30,7 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: () => void }) {
           institution_id: metadata.institution.institution_id,
           name: metadata.institution.name,
         } : undefined,
-      });
+      }, budgetId);
       onSuccess();
     } catch (err) {
       console.error('Failed to exchange token:', err);
@@ -53,6 +54,7 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: () => void }) {
 }
 
 export function LinkedAccounts() {
+  const { currentBudget } = useBudget();
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,15 +65,19 @@ export function LinkedAccounts() {
   const [plaidKey, setPlaidKey] = useState(0);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentBudget) {
+      loadData();
+    }
+  }, [currentBudget]);
 
   async function loadData() {
+    if (!currentBudget) return;
+
     try {
       setIsLoading(true);
       setError(null);
 
-      const itemsData = await getPlaidItems();
+      const itemsData = await getPlaidItems(currentBudget.id);
       setItems(itemsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -87,12 +93,14 @@ export function LinkedAccounts() {
   }
 
   async function handleSync() {
+    if (!currentBudget) return;
+
     try {
       setIsSyncing(true);
       setError(null);
       setSyncResult(null);
 
-      const result = await syncTransactions();
+      const result = await syncTransactions(currentBudget.id);
       setSyncResult(result);
       await loadData();
     } catch (err) {
@@ -142,6 +150,16 @@ export function LinkedAccounts() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  }
+
+  if (!currentBudget) {
+    return (
+      <Layout>
+        <div className="bg-white shadow rounded-lg p-6">
+          <p className="text-gray-500">No budget selected</p>
+        </div>
+      </Layout>
+    );
   }
 
   if (isLoading) {
@@ -194,7 +212,7 @@ export function LinkedAccounts() {
             >
               {isSyncing ? 'Syncing...' : 'Sync Transactions'}
             </button>
-            <PlaidLinkButton key={plaidKey} onSuccess={handleLinkSuccess} />
+            <PlaidLinkButton key={plaidKey} onSuccess={handleLinkSuccess} budgetId={currentBudget.id} />
           </div>
         </div>
       </div>

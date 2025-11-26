@@ -592,6 +592,8 @@ export async function budgetsRoutes(fastify) {
         FROM budget_invitations bi
         JOIN users u ON u.id = bi.invited_by
         WHERE bi.budget_id = $1
+        AND bi.status = 'pending'
+        AND bi.expires_at > CURRENT_TIMESTAMP
         ORDER BY bi.created_at DESC`,
         [budgetId]
       );
