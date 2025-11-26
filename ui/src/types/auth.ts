@@ -23,6 +23,7 @@ export interface RegisterRequest {
   password: string;
   firstName?: string;
   lastName?: string;
+  recaptchaToken: string;
 }
 
 export interface RegisterResponse {

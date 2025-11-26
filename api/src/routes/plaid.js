@@ -1,33 +1,4 @@
-import crypto from 'crypto';
-import { config } from '../config.js';
-
-const ALGORITHM = 'aes-256-gcm';
-
-function encrypt(text, encryptionKey) {
-  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag();
-
-  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-}
-
-function decrypt(encryptedText, encryptionKey) {
-  const [ivHex, authTagHex, encrypted] = encryptedText.split(':');
-  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
-
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
-
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
+import { encrypt, decrypt } from '../utils/encrypt-secret.js';
 
 export async function plaidRoutes(fastify) {
   const authenticate = async (request, reply) => fastify.authenticate(request, reply);

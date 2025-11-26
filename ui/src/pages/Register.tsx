@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { register } from '../api/auth';
 
 export function Register() {
@@ -10,6 +11,8 @@ export function Register() {
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
@@ -28,6 +31,12 @@ export function Register() {
       return;
     }
 
+    // Validate reCAPTCHA
+    if (!recaptchaToken) {
+      setError('Please complete the reCAPTCHA verification');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -36,6 +45,7 @@ export function Register() {
         password,
         firstName: firstName || undefined,
         lastName: lastName || undefined,
+        recaptchaToken,
       });
 
       // Save authentication data to localStorage
@@ -49,11 +59,23 @@ export function Register() {
         setError('This email address is not authorized to register. Please contact an administrator.');
       } else if (err.message.includes('already registered')) {
         setError('This email address is already registered. Please sign in instead.');
+      } else if (err.message.includes('reCAPTCHA')) {
+        setError('reCAPTCHA verification failed. Please try again.');
+        // Reset reCAPTCHA
+        recaptchaRef.current?.reset();
+        setRecaptchaToken(null);
       } else {
         setError(err instanceof Error ? err.message : 'Registration failed');
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleRecaptchaChange = (token: string | null) => {
+    setRecaptchaToken(token);
+    if (token) {
+      setError(''); // Clear any reCAPTCHA-related errors
     }
   };
 
@@ -162,9 +184,17 @@ export function Register() {
             </div>
           </div>
 
+          <div className="flex justify-center">
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={import.meta.env.VITE_RECAPTCHA_SITE_KEY}
+              onChange={handleRecaptchaChange}
+            />
+          </div>
+
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !recaptchaToken}
             className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? 'Creating account...' : 'Create account'}

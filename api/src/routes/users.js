@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { verifyRecaptcha } from '../utils/recaptcha.js';
 
 const SALT_ROUNDS = 12;
 
@@ -8,19 +9,30 @@ export async function usersRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['email', 'password'],
+        required: ['email', 'password', 'recaptchaToken'],
         properties: {
           email: { type: 'string', format: 'email' },
           password: { type: 'string', minLength: 8 },
           firstName: { type: 'string' },
-          lastName: { type: 'string' }
+          lastName: { type: 'string' },
+          recaptchaToken: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
-    const { email, password, firstName, lastName } = request.body;
+    const { email, password, firstName, lastName, recaptchaToken } = request.body;
 
     try {
+      // Verify reCAPTCHA token
+      const recaptchaResult = await verifyRecaptcha(recaptchaToken);
+
+      if (!recaptchaResult.success) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'reCAPTCHA verification failed. Please try again.'
+        });
+      }
+
       // Check if email is in the allowed list
       const allowedEmail = await fastify.pg.query(
         'SELECT id FROM allowed_emails WHERE email = $1',
