@@ -15,3 +15,10 @@ COMMENT ON TABLE allowed_emails IS 'Whitelist of email addresses allowed to regi
 COMMENT ON COLUMN allowed_emails.email IS 'Email address that is allowed to register';
 COMMENT ON COLUMN allowed_emails.notes IS 'Optional notes about why this email was added to the whitelist';
 COMMENT ON COLUMN allowed_emails.created_by IS 'User ID of the person who added this email to the whitelist';
+
+-- Insert initial allowed emails (if they don't already exist)
+INSERT INTO allowed_emails (email, notes)
+VALUES
+    ('jay.brower.229@gmail.com', 'Initial allowed email'),
+    ('emily.tryon@gmail.com', 'Initial allowed email')
+ON CONFLICT (email) DO NOTHING;
