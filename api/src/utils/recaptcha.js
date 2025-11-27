@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { decrypt } from './encrypt-secret.js';
+import { decrypt } from './encrypt.js';
 
 /**
  * Verifies a reCAPTCHA token with Google's reCAPTCHA API

@@ -1,4 +1,4 @@
-import { encrypt, decrypt } from '../utils/encrypt-secret.js';
+import { encrypt, decrypt } from '../utils/encrypt.js';
 
 export async function plaidRoutes(fastify) {
   const authenticate = async (request, reply) => fastify.authenticate(request, reply);
