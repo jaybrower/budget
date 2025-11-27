@@ -60,7 +60,7 @@ export function Dashboard() {
         // Load templates for creation option (only for current month)
         if (isCurrentMonth) {
           try {
-            const templatesData = await getTemplates();
+            const templatesData = await getTemplates(currentBudget.id);
             setTemplates(templatesData);
             const defaultTemplate = templatesData.find(t => t.isDefault);
             setSelectedTemplateId(defaultTemplate?.id || templatesData[0]?.id || '');
@@ -255,6 +255,7 @@ interface BudgetDisplayProps {
 }
 
 function BudgetDisplay({ sheet, syncStatus, isSyncing, onSync, onSheetUpdate }: BudgetDisplayProps) {
+  const { currentBudget } = useBudget();
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [additionalIncomeValue, setAdditionalIncomeValue] = useState(parseFloat(sheet.additionalIncome).toString());
   const [isSaving, setIsSaving] = useState(false);

@@ -7,7 +7,6 @@ import {
   getUnassociatedPurchases,
   linkPurchase,
 } from '../api/purchases';
-import type { BudgetSheet, SheetLineItem } from '../types/sheet';
 import type { Purchase, CreatePurchaseRequest } from '../types/purchase';
 
 interface LineItemOption {
@@ -18,7 +17,6 @@ interface LineItemOption {
 
 export function Purchases() {
   const { currentBudget } = useBudget();
-  const [currentSheet, setCurrentSheet] = useState<BudgetSheet | null>(null);
   const [unassociatedPurchases, setUnassociatedPurchases] = useState<Purchase[]>([]);
   const [lineItemOptions, setLineItemOptions] = useState<LineItemOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,7 +58,6 @@ export function Purchases() {
       // Try to load current budget sheet for line items
       try {
         const sheet = await getCurrentSheet(currentBudget.id);
-        setCurrentSheet(sheet);
 
         // Extract line items from the sheet
         const options: LineItemOption[] = [];
@@ -76,7 +73,6 @@ export function Purchases() {
         setLineItemOptions(options);
       } catch {
         // No current budget sheet - that's okay
-        setCurrentSheet(null);
         setLineItemOptions([]);
       }
     } catch (err) {
