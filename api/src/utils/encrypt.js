@@ -4,7 +4,7 @@ const ALGORITHM = 'aes-256-gcm';
 
 export function encrypt(text, encryptionKey) {
   const key = crypto.scryptSync(encryptionKey, 'salt', 32);
-  const iv = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12); // 12 bytes (96 bits) is the recommended IV size for AES-GCM
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
 
   let encrypted = cipher.update(text, 'utf8', 'hex');
