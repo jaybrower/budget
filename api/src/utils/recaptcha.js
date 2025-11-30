@@ -14,7 +14,12 @@ export async function verifyRecaptcha(token) {
       throw new Error('RECAPTCHA_SECRET_KEY not configured');
     }
 
-    const secretKey = decrypt(encryptedSecret);
+    const encryptionKey = process.env.ENCRYPTION_KEY;
+    if (!encryptionKey) {
+      throw new Error('ENCRYPTION_KEY not configured');
+    }
+
+    const secretKey = decrypt(encryptedSecret, encryptionKey);
 
     // Make request to Google's reCAPTCHA verification endpoint
     const response = await axios.post(
