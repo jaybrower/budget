@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import { config } from './config.js';
 import postgresPlugin from './plugins/postgres.js';
 import jwtPlugin from './plugins/jwt.js';
@@ -12,6 +13,12 @@ import { plaidRoutes } from './routes/plaid.js';
 
 const fastify = Fastify({
   logger: true
+});
+
+// Register CORS
+await fastify.register(cors, {
+  origin: 'https://budget.unibrow.dev',
+  credentials: true
 });
 
 // Register plugins

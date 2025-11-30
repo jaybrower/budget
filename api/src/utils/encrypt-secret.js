@@ -9,13 +9,22 @@ const rl = readline.createInterface({
 console.log('Secret Encryption Utility');
 console.log('========================\n');
 
-rl.question('Enter the secret to encrypt: ', (secret) => {
-  rl.question('Enter your encryption key (use same key in ENCRYPTION_KEY env var): ', (key) => {
+const askForSecret = (key) => {
+  rl.question('\nEnter the secret to encrypt (or "stop" to exit): ', (secret) => {
+    if (secret.toLowerCase() === 'stop') {
+      console.log('\nExiting encryption utility.');
+      rl.close();
+      return;
+    }
+
     const encrypted = encrypt(secret, key);
     console.log('\nEncrypted value:');
     console.log(encrypted);
-    console.log('\nHere is your encrypted value:');
-    console.log(`${encrypted}`);
-    rl.close();
+
+    askForSecret(key);
   });
+};
+
+rl.question('Enter your encryption key (use same key in ENCRYPTION_KEY env var): ', (key) => {
+  askForSecret(key);
 });

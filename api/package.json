@@ -10,6 +10,7 @@
     "encrypt-secret": "node src/utils/encrypt-secret.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^9.0.0",
     "@fastify/postgres": "^6.0.0",
     "axios": "^1.13.2",
