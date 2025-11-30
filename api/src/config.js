@@ -6,7 +6,20 @@ dotenv.config();
 const ALGORITHM = 'aes-256-gcm';
 
 function decrypt(encryptedText, encryptionKey) {
-  const [ivHex, authTagHex, encrypted] = encryptedText.split(':');
+  if (!encryptedText) {
+    throw new Error('Encrypted text is required for decryption');
+  }
+
+  const parts = encryptedText.split(':');
+  if (parts.length !== 3) {
+    throw new Error(
+      `Invalid encrypted value format. Expected format: "iv:authTag:encrypted" (3 parts separated by colons). ` +
+      `Received ${parts.length} part(s). This usually means the environment variable was not set correctly. ` +
+      `Make sure to wrap the encrypted value in quotes when setting it in your hosting provider.`
+    );
+  }
+
+  const [ivHex, authTagHex, encrypted] = parts;
   const key = crypto.scryptSync(encryptionKey, 'salt', 32);
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
