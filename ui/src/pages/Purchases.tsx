@@ -170,7 +170,7 @@ export function Purchases() {
 
   async function handleDeletePurchase(purchase: Purchase) {
     const confirmMessage = `Are you sure you want to delete this purchase?\n\n` +
-      `Date: ${formatDate(purchase.purchaseDate)}\n` +
+      `Date: ${formatDate(purchase.purchaseDate, false)}\n` +
       `Amount: ${formatCurrency(purchase.amount)}\n` +
       `Merchant: ${purchase.merchant || 'N/A'}\n` +
       `Description: ${purchase.description || 'N/A'}`;
@@ -240,8 +240,19 @@ export function Purchases() {
     }).format(num);
   }
 
-  function formatDate(dateString: string): string {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  function formatDate(dateString: string, includeTime: boolean = true): string {
+    let date: Date;
+
+    if (includeTime) {
+      // Parse with time, which respects timezone
+      date = new Date(dateString);
+    } else {
+      // Parse only the date parts, ignoring time and timezone
+      const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+      date = new Date(year, month - 1, day);
+    }
+
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -625,7 +636,7 @@ export function Purchases() {
                 {unassociatedPurchases.map((purchase) => (
                   <tr key={purchase.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDate(purchase.purchaseDate)}
+                      {formatDate(purchase.purchaseDate, false)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatCurrency(purchase.amount)}
