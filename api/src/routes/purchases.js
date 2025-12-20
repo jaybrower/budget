@@ -190,10 +190,10 @@ export async function purchasesRoutes(fastify) {
           // Generate hash for duplicate detection
           const hash = generatePurchaseHash(purchase);
 
-          // Check if hash already exists for this user
+          // Check if hash already exists for this budget
           const hashCheck = await fastify.pg.query(
-            `SELECT id FROM purchases WHERE user_id = $1 AND hash = $2`,
-            [userId, hash]
+            `SELECT id FROM purchases WHERE budget_id = $1 AND hash = $2`,
+            [budgetId, hash]
           );
 
           if (hashCheck.rows.length > 0) {
