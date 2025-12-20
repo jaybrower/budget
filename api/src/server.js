@@ -19,7 +19,8 @@ const fastify = Fastify({
 // Register CORS
 await fastify.register(cors, {
   origin: 'https://budget.unibrow.dev',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 });
 
 // Register plugins
