@@ -12,9 +12,11 @@
   "dependencies": {
     "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^9.0.0",
+    "@fastify/multipart": "^9.3.0",
     "@fastify/postgres": "^6.0.0",
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "fastify-plugin": "^5.0.0",

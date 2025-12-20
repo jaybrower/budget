@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import { config } from './config.js';
 import postgresPlugin from './plugins/postgres.js';
 import jwtPlugin from './plugins/jwt.js';
@@ -25,6 +26,11 @@ await fastify.register(cors, {
 await fastify.register(postgresPlugin);
 await fastify.register(jwtPlugin);
 await fastify.register(plaidPlugin);
+await fastify.register(multipart, {
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB max file size
+  }
+});
 
 // Register routes
 await fastify.register(usersRoutes, { prefix: '/api/users' });
