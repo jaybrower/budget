@@ -6,6 +6,8 @@ import {
   createPurchase,
   getUnassociatedPurchases,
   linkPurchase,
+  importPurchases,
+  type ImportPurchasesResult,
 } from '../api/purchases';
 import type { Purchase, CreatePurchaseRequest } from '../types/purchase';
 
@@ -37,6 +39,12 @@ export function Purchases() {
   // Link purchase state
   const [linkingPurchaseId, setLinkingPurchaseId] = useState<string | null>(null);
   const [linkLineItemId, setLinkLineItemId] = useState('');
+
+  // CSV import state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPaymentMethod, setImportPaymentMethod] = useState('southwest_visa');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportPurchasesResult | null>(null);
 
   useEffect(() => {
     if (currentBudget) {
@@ -156,6 +164,50 @@ export function Purchases() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to link purchase');
+    }
+  }
+
+  async function handleImportCSV(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!importFile) {
+      setError('Please select a CSV file');
+      return;
+    }
+
+    if (!currentBudget) {
+      setError('No budget selected');
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setError(null);
+      setImportResult(null);
+
+      const result = await importPurchases(
+        importFile,
+        currentBudget.id,
+        importPaymentMethod
+      );
+
+      setImportResult(result);
+      setImportFile(null);
+
+      // Reload data to show newly imported purchases
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import purchases');
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImportFile(file);
+      setImportResult(null);
     }
   }
 
@@ -355,6 +407,161 @@ export function Purchases() {
             </button>
           </div>
         </form>
+      </div>
+
+      {/* CSV Import Section */}
+      <div className="bg-white shadow rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          Import Purchases from CSV
+        </h2>
+
+        <form onSubmit={handleImportCSV} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="csvFile"
+                className="block text-sm font-medium text-gray-700"
+              >
+                CSV File *
+              </label>
+              <input
+                type="file"
+                id="csvFile"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="mt-1 block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-medium
+                  file:bg-indigo-50 file:text-indigo-700
+                  hover:file:bg-indigo-100"
+                required
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                CSV format: Transaction Date, Description, Category, Amount
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="importPaymentMethod"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Payment Method *
+              </label>
+              <select
+                id="importPaymentMethod"
+                value={importPaymentMethod}
+                onChange={(e) => setImportPaymentMethod(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              >
+                <option value="southwest_visa">Southwest Visa</option>
+                <option value="amex_ach">Amex ACH</option>
+                <option value="delta_amex">Delta Amex</option>
+                <option value="venmo_visa">Venmo Visa</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={isImporting || !importFile}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              {isImporting ? 'Importing...' : 'Import CSV'}
+            </button>
+          </div>
+        </form>
+
+        {/* Import Results */}
+        {importResult && (
+          <div className="mt-6 space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h3 className="text-sm font-medium text-blue-900 mb-2">
+                Import Summary
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div>
+                  <p className="text-blue-600 font-medium">Total Rows</p>
+                  <p className="text-blue-900 text-lg">{importResult.summary.total}</p>
+                </div>
+                <div>
+                  <p className="text-green-600 font-medium">Imported</p>
+                  <p className="text-green-900 text-lg">{importResult.summary.imported}</p>
+                </div>
+                <div>
+                  <p className="text-yellow-600 font-medium">Duplicates</p>
+                  <p className="text-yellow-900 text-lg">{importResult.summary.duplicates}</p>
+                </div>
+                <div>
+                  <p className="text-red-600 font-medium">Failed</p>
+                  <p className="text-red-900 text-lg">{importResult.summary.failed}</p>
+                </div>
+                <div>
+                  <p className="text-red-600 font-medium">Parse Errors</p>
+                  <p className="text-red-900 text-lg">{importResult.summary.parseErrors}</p>
+                </div>
+              </div>
+            </div>
+
+            {importResult.duplicates.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <h3 className="text-sm font-medium text-yellow-900 mb-2">
+                  Duplicates Skipped ({importResult.duplicates.length})
+                </h3>
+                <div className="max-h-40 overflow-y-auto">
+                  <ul className="text-xs text-yellow-800 space-y-1">
+                    {importResult.duplicates.slice(0, 10).map((dup, idx) => (
+                      <li key={idx}>
+                        {dup.purchase_date} - {dup.merchant} - {formatCurrency(dup.amount)} - {dup.reason}
+                      </li>
+                    ))}
+                    {importResult.duplicates.length > 10 && (
+                      <li className="italic">
+                        ... and {importResult.duplicates.length - 10} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {importResult.failed.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                <h3 className="text-sm font-medium text-red-900 mb-2">
+                  Failed Imports ({importResult.failed.length})
+                </h3>
+                <div className="max-h-40 overflow-y-auto">
+                  <ul className="text-xs text-red-800 space-y-1">
+                    {importResult.failed.map((fail, idx) => (
+                      <li key={idx}>
+                        {fail.purchase_date} - {fail.merchant} - {formatCurrency(fail.amount)} - {fail.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {importResult.parseErrors.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                <h3 className="text-sm font-medium text-red-900 mb-2">
+                  Parse Errors ({importResult.parseErrors.length})
+                </h3>
+                <div className="max-h-40 overflow-y-auto">
+                  <ul className="text-xs text-red-800 space-y-1">
+                    {importResult.parseErrors.map((err, idx) => (
+                      <li key={idx}>
+                        Row {err.row}: {err.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Unassociated Purchases List */}

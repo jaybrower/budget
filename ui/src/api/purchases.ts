@@ -36,3 +36,60 @@ export async function unlinkPurchase(purchaseId: string): Promise<Purchase> {
     body: {},
   });
 }
+
+export interface ImportPurchasesResult {
+  summary: {
+    total: number;
+    imported: number;
+    duplicates: number;
+    failed: number;
+    parseErrors: number;
+  };
+  imported: Purchase[];
+  duplicates: Array<{
+    purchase_date: string;
+    merchant: string;
+    description: string;
+    amount: number;
+    reason: string;
+  }>;
+  failed: Array<{
+    purchase_date: string;
+    merchant: string;
+    description: string;
+    amount: number;
+    reason: string;
+  }>;
+  parseErrors: Array<{
+    row: number;
+    error: string;
+    data: any;
+  }>;
+}
+
+export async function importPurchases(
+  file: File,
+  budgetId: string,
+  paymentMethod: string
+): Promise<ImportPurchasesResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('budgetId', budgetId);
+  formData.append('paymentMethod', paymentMethod);
+
+  const token = localStorage.getItem('token');
+  const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/purchases/import`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to import purchases');
+  }
+
+  return response.json();
+}
