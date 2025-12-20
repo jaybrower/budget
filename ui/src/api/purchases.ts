@@ -37,6 +37,13 @@ export async function unlinkPurchase(purchaseId: string): Promise<Purchase> {
   });
 }
 
+export async function deletePurchase(purchaseId: string): Promise<void> {
+  return apiClient<void>(`/purchases/${purchaseId}`, {
+    method: 'DELETE',
+    body: {},
+  });
+}
+
 export interface ImportPurchasesResult {
   summary: {
     total: number;

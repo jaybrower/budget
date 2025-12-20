@@ -6,6 +6,7 @@ import {
   createPurchase,
   getUnassociatedPurchases,
   linkPurchase,
+  deletePurchase,
   importPurchases,
   type ImportPurchasesResult,
 } from '../api/purchases';
@@ -164,6 +165,26 @@ export function Purchases() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to link purchase');
+    }
+  }
+
+  async function handleDeletePurchase(purchase: Purchase) {
+    const confirmMessage = `Are you sure you want to delete this purchase?\n\n` +
+      `Date: ${formatDate(purchase.purchaseDate)}\n` +
+      `Amount: ${formatCurrency(purchase.amount)}\n` +
+      `Merchant: ${purchase.merchant || 'N/A'}\n` +
+      `Description: ${purchase.description || 'N/A'}`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setError(null);
+      await deletePurchase(purchase.id);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete purchase');
     }
   }
 
@@ -650,13 +671,21 @@ export function Purchases() {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setLinkingPurchaseId(purchase.id)}
-                          disabled={lineItemOptions.length === 0}
-                          className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed"
-                        >
-                          Link to Budget
-                        </button>
+                        <div className="flex items-center space-x-3">
+                          <button
+                            onClick={() => setLinkingPurchaseId(purchase.id)}
+                            disabled={lineItemOptions.length === 0}
+                            className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          >
+                            Link to Budget
+                          </button>
+                          <button
+                            onClick={() => handleDeletePurchase(purchase)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

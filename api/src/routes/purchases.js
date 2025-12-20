@@ -560,4 +560,68 @@ export async function purchasesRoutes(fastify) {
       });
     }
   });
+
+  // Delete an unlinked purchase
+  fastify.delete('/:purchaseId', {
+    preHandler: [authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        required: ['purchaseId'],
+        properties: {
+          purchaseId: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { purchaseId } = request.params;
+    const userId = request.user.userId;
+
+    try {
+      // Verify user has access to purchase and editor/owner role
+      const purchaseCheck = await fastify.pg.query(
+        `SELECT p.id, p.line_item_id, bu.role
+         FROM purchases p
+         JOIN budget_users bu ON bu.budget_id = p.budget_id
+         WHERE p.id = $1 AND bu.user_id = $2`,
+        [purchaseId, userId]
+      );
+
+      if (purchaseCheck.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Purchase not found'
+        });
+      }
+
+      if (purchaseCheck.rows[0].role === 'viewer') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Viewers cannot delete purchases'
+        });
+      }
+
+      // Only allow deletion if purchase is not linked to a line item
+      if (purchaseCheck.rows[0].line_item_id !== null) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Cannot delete a purchase that is linked to a budget line item. Unlink it first.'
+        });
+      }
+
+      // Delete the purchase
+      await fastify.pg.query(
+        `DELETE FROM purchases WHERE id = $1`,
+        [purchaseId]
+      );
+
+      return reply.status(204).send();
+    } catch (err) {
+      request.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to delete purchase'
+      });
+    }
+  });
 }
