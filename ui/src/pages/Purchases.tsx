@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { useBudget } from '../contexts/BudgetContext';
-import { getCurrentSheet } from '../api/sheets';
+import { getSheetByDate } from '../api/sheets';
 import {
   createPurchase,
   getUnassociatedPurchases,
@@ -20,6 +20,9 @@ interface LineItemOption {
 
 export function Purchases() {
   const { currentBudget } = useBudget();
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [unassociatedPurchases, setUnassociatedPurchases] = useState<Purchase[]>([]);
   const [lineItemOptions, setLineItemOptions] = useState<LineItemOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +54,7 @@ export function Purchases() {
     if (currentBudget) {
       loadData();
     }
-  }, [currentBudget]);
+  }, [selectedYear, selectedMonth, currentBudget]);
 
   async function loadData() {
     if (!currentBudget) return;
@@ -64,9 +67,9 @@ export function Purchases() {
       const purchases = await getUnassociatedPurchases(currentBudget.id);
       setUnassociatedPurchases(purchases);
 
-      // Try to load current budget sheet for line items
+      // Try to load budget sheet for selected month/year for line items
       try {
-        const sheet = await getCurrentSheet(currentBudget.id);
+        const sheet = await getSheetByDate(selectedYear, selectedMonth, currentBudget.id);
 
         // Extract line items from the sheet
         const options: LineItemOption[] = [];
@@ -81,7 +84,7 @@ export function Purchases() {
         }
         setLineItemOptions(options);
       } catch {
-        // No current budget sheet - that's okay
+        // No budget sheet for this month/year - that's okay
         setLineItemOptions([]);
       }
     } catch (err) {
@@ -259,6 +262,16 @@ export function Purchases() {
     });
   }
 
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const years = [];
+  for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 1; y++) {
+    years.push(y);
+  }
+
   if (isLoading) {
     return (
       <Layout>
@@ -282,6 +295,40 @@ export function Purchases() {
           </button>
         </div>
       )}
+
+      {/* Month/Year selector */}
+      <div className="bg-white shadow rounded-lg p-6 mb-6">
+        <div className="flex items-center space-x-4">
+          <label className="text-sm font-medium text-gray-700">Link to Budget:</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+            className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          >
+            {months.map((month, index) => (
+              <option key={month} value={index + 1}>
+                {month}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+            className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          >
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+          {lineItemOptions.length === 0 && (
+            <p className="text-sm text-gray-500 italic">
+              No budget sheet for {months[selectedMonth - 1]} {selectedYear}
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Create Purchase Form */}
       <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -422,8 +469,7 @@ export function Purchases() {
                 </select>
               ) : (
                 <p className="mt-1 text-sm text-gray-500">
-                  No budget sheet for current month. Create a budget sheet to
-                  associate purchases with line items.
+                  No budget sheet for {months[selectedMonth - 1]} {selectedYear}
                 </p>
               )}
             </div>
